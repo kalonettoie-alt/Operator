@@ -18,6 +18,8 @@ export const supabase = createBrowserClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   {
     auth: {
+      // Clé de stockage dédiée pour éviter les conflits avec d'autres apps Supabase
+      storageKey: 'deltom-auth',
       flowType: 'pkce',
       detectSessionInUrl: true,
       persistSession: true,

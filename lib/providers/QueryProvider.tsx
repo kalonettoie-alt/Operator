@@ -15,8 +15,10 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
           queries: {
             // Pas de refetch automatique au focus de la fenêtre (UX moins agressive)
             refetchOnWindowFocus: false,
-            // Retry 1 fois en cas d'erreur réseau
-            retry: 1,
+            // Retry 2 fois en cas d'erreur réseau (couvre les timeouts auth transitoires)
+            retry: 2,
+            // Délai exponentiel entre les retries : 1s, 2s
+            retryDelay: (attempt) => attempt * 1000,
             // Cache de 5 minutes par défaut
             staleTime: 5 * 60 * 1000,
           },

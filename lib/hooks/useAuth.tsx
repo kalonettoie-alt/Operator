@@ -68,13 +68,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    // Garde contre les mises à jour d'état après démontage.
+    // Nécessaire car React Strict Mode monte les composants deux fois —
+    // sans ce flag, getSession() (async) peut appeler setIsLoading(false)
+    // sur un composant déjà démonté, laissant isLoading = true indéfiniment.
+    let isMounted = true;
+
     // 1. Chargement de la session existante au démarrage
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!isMounted) return;
+
       const currentUser = session?.user ?? null;
       setUser(currentUser);
 
       if (currentUser) {
         const userProfile = await loadProfile(currentUser.id);
+        if (!isMounted) return;
         setProfile(userProfile);
       }
 
@@ -85,11 +94,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!isMounted) return;
+
       const currentUser = session?.user ?? null;
       setUser(currentUser);
 
       if (currentUser) {
         const userProfile = await loadProfile(currentUser.id);
+        if (!isMounted) return;
         setProfile(userProfile);
       } else {
         setProfile(null);
@@ -98,8 +110,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     });
 
-    // Nettoyage de l'abonnement au démontage
-    return () => subscription.unsubscribe();
+    // Nettoyage au démontage : désabonnement + flag pour stopper les callbacks async
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Déconnexion + redirection
