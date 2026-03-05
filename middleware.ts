@@ -10,7 +10,7 @@
 
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
-import type { UserRole } from '@/types/database';
+import type { UserRole } from '@/types/enums';
 
 // Dashboard par rôle
 const ROLE_DASHBOARDS: Record<UserRole, string> = {

@@ -8,7 +8,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./Sidebar";
-import type { UserRole } from "@/types/database";
+import type { UserRole } from "@/types/enums";
 
 // Nombre maximum d'items affichés dans la barre de navigation mobile
 const MAX_MOBILE_ITEMS = 5;

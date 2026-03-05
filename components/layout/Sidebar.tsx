@@ -20,7 +20,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { UserRole } from "@/types/database";
+import type { UserRole } from "@/types/enums";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
