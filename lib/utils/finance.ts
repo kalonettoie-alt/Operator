@@ -2,6 +2,8 @@
 // JAMAIS dupliquer ces calculs dans les composants.
 // Chaque fonction a un test correspondant dans __tests__/finance.test.ts
 
+import { INTERVENTION_STATUSES } from "@/types/enums";
+
 // ─── Type minimal pour les calculs ───────────────────────────────────────────
 // Utilise un sous-type pour ne pas dépendre de Supabase dans les tests.
 
@@ -36,13 +38,14 @@ export function calculateInterventionGain(
 
 /**
  * Somme des prix_client_ttc sur une liste d'interventions.
- * Exclut les interventions annulées.
+ * Ne comptabilise QUE les interventions terminées (status = 'terminee').
+ * Les interventions en cours, assignées, annulées, etc. sont exclues.
  */
 export function calculateMonthlyRevenue(
   interventions: InterventionForFinance[]
 ): number {
   return interventions
-    .filter((i) => i.status !== "annulee")
+    .filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE)
     .reduce((sum, i) => sum + (i.prix_client_ttc ?? 0), 0);
 }
 
@@ -50,13 +53,13 @@ export function calculateMonthlyRevenue(
 
 /**
  * Somme des prix_prestataire_ht sur une liste d'interventions.
- * Exclut les interventions annulées.
+ * Ne comptabilise QUE les interventions terminées (status = 'terminee').
  */
 export function calculateMonthlyProviderCost(
   interventions: InterventionForFinance[]
 ): number {
   return interventions
-    .filter((i) => i.status !== "annulee")
+    .filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE)
     .reduce((sum, i) => sum + (i.prix_prestataire_ht ?? 0), 0);
 }
 
@@ -64,25 +67,26 @@ export function calculateMonthlyProviderCost(
 
 /**
  * Somme des prix_blanchisserie quand blanchisserie_incluse = true.
- * Exclut les interventions annulées.
+ * Ne comptabilise QUE les interventions terminées (status = 'terminee').
  */
 export function calculateMonthlyBlanchisserie(
   interventions: InterventionForFinance[]
 ): number {
   return interventions
-    .filter((i) => i.status !== "annulee" && i.blanchisserie_incluse)
+    .filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE && i.blanchisserie_incluse)
     .reduce((sum, i) => sum + (i.prix_blanchisserie ?? 0), 0);
 }
 
 // ─── Calcul du gain mensuel total ────────────────────────────────────────────
 
 /**
- * Gain total du mois = somme des gains de chaque intervention non annulée.
+ * Gain total du mois = somme des gains de chaque intervention terminée.
+ * Ne comptabilise QUE les interventions terminées (status = 'terminee').
  */
 export function calculateMonthlyGain(
   interventions: InterventionForFinance[]
 ): number {
   return interventions
-    .filter((i) => i.status !== "annulee")
+    .filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE)
     .reduce((sum, i) => sum + calculateInterventionGain(i), 0);
 }
