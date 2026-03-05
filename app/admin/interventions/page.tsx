@@ -4,6 +4,7 @@
 // Filtres : statut, dates, client, prestataire — appliqués côté Supabase.
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useInterventions, type InterventionFilters } from "@/lib/hooks/useInterventions";
 import { useClients, usePrestataires } from "@/lib/hooks/useProfiles";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -100,6 +101,9 @@ export default function InterventionsPage() {
 
   // Données
   const { data: interventions, isLoading, error } = useInterventions(filters);
+  const router = useRouter();
+
+  // ──
   const { data: clients } = useClients();
   const { data: prestataires } = usePrestataires();
 
@@ -240,7 +244,11 @@ export default function InterventionsPage() {
             </TableHeader>
             <TableBody>
               {interventions.map((intervention) => (
-                <TableRow key={intervention.id}>
+                <TableRow
+                  key={intervention.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/admin/interventions/${intervention.id}`)}
+                >
                   <TableCell className="tabular-nums whitespace-nowrap">
                     {formatDate(intervention.date)}
                   </TableCell>

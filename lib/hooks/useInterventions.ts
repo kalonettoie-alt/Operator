@@ -20,18 +20,49 @@ export interface InterventionFilters {
   prestataireId?: string;
 }
 
+// Type pour la liste (champs allégés)
 export type InterventionWithRelations = Intervention & {
   logement: { id: string; name: string; city: string } | null;
   client: { id: string; full_name: string } | null;
   prestataire: { id: string; full_name: string } | null;
 };
 
-// ─── Hook principal ───────────────────────────────────────────────────────────
+// Type enrichi pour la vue détail
+export type InterventionDetail = Intervention & {
+  logement: {
+    id: string; name: string; address: string; city: string;
+    postal_code: string; instructions: string | null;
+    access_code: string | null; zone: string | null;
+  } | null;
+  client: { id: string; full_name: string; email: string; phone: string | null } | null;
+  prestataire: { id: string; full_name: string; phone: string | null } | null;
+};
 
-/**
- * Retourne les interventions avec leurs relations (logement, client, prestataire).
- * Les filtres sont appliqués côté Supabase (pas en mémoire).
- */
+// ─── Hook : intervention unique (vue détail) ──────────────────────────────────
+
+export function useIntervention(id: string) {
+  return useQuery<InterventionDetail>({
+    queryKey: [QUERY_KEY, id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("interventions")
+        .select(`
+          *,
+          logement:logements!interventions_logement_id_fkey(id, name, address, city, postal_code, instructions, access_code, zone),
+          client:profiles!interventions_client_id_fkey(id, full_name, email, phone),
+          prestataire:profiles!interventions_prestataire_id_fkey(id, full_name, phone)
+        `)
+        .eq("id", id)
+        .single();
+      if (error) throw error;
+      return data as InterventionDetail;
+    },
+    enabled: !!id,
+  });
+}
+
+// ─── Hook : liste avec filtres ────────────────────────────────────────────────
+
 export function useInterventions(filters: InterventionFilters = {}) {
   const { status, dateFrom, dateTo, clientId, prestataireId } = filters;
 
