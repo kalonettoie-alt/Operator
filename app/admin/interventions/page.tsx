@@ -93,11 +93,29 @@ function StatusFilter({ value, onChange }: StatusFilterProps) {
   );
 }
 
+// ─── Utilitaire : plage du mois courant ───────────────────────────────────────
+
+function getCurrentMonthRange(): { dateFrom: string; dateTo: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  // Premier jour du mois (YYYY-MM-DD)
+  const dateFrom = new Date(year, month, 1).toISOString().slice(0, 10);
+  // Dernier jour du mois
+  const dateTo = new Date(year, month + 1, 0).toISOString().slice(0, 10);
+  return { dateFrom, dateTo };
+}
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function InterventionsPage() {
-  // État des filtres
-  const [filters, setFilters] = useState<InterventionFilters>({});
+  // Mode de filtrage des dates : 'mois' (ce mois-ci, défaut) ou 'custom' (période libre)
+  const [dateMode, setDateMode] = useState<"mois" | "custom">("mois");
+
+  // Filtres — initialisés sur le mois courant par défaut
+  const [filters, setFilters] = useState<InterventionFilters>(() => ({
+    ...getCurrentMonthRange(),
+  }));
 
   // Données
   const { data: interventions, isLoading, error } = useInterventions(filters);
@@ -115,11 +133,31 @@ export default function InterventionsPage() {
     setFilters((prev) => ({ ...prev, [key]: value || undefined }));
   }
 
-  function resetFilters() {
-    setFilters({});
+  // Bascule vers le mode "ce mois-ci"
+  function switchToCurrentMonth() {
+    setDateMode("mois");
+    setFilters((prev) => ({ ...prev, ...getCurrentMonthRange() }));
   }
 
-  const hasActiveFilters = Object.values(filters).some((v) => v !== undefined);
+  // Bascule vers le mode "période personnalisée"
+  function switchToCustom() {
+    setDateMode("custom");
+  }
+
+  function resetFilters() {
+    setDateMode("mois");
+    setFilters(getCurrentMonthRange());
+  }
+
+  // Il y a des filtres actifs si un filtre autre que les dates du mois courant est défini
+  const { dateFrom: moisFrom, dateTo: moisTo } = getCurrentMonthRange();
+  const hasActiveFilters =
+    dateMode === "custom" ||
+    filters.status !== undefined ||
+    filters.clientId !== undefined ||
+    filters.prestataireId !== undefined ||
+    filters.dateFrom !== moisFrom ||
+    filters.dateTo !== moisTo;
 
   // ─── Rendu ──────────────────────────────────────────────────────────────────
 
@@ -156,28 +194,58 @@ export default function InterventionsPage() {
           />
         </div>
 
-        {/* Filtres date, client, prestataire */}
+        {/* Sélecteur de période */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Période
+          </p>
+          <div className="flex flex-wrap gap-2 items-center">
+            <Button
+              variant={dateMode === "mois" ? "default" : "outline"}
+              size="sm"
+              onClick={switchToCurrentMonth}
+            >
+              Ce mois-ci
+            </Button>
+            <Button
+              variant={dateMode === "custom" ? "default" : "outline"}
+              size="sm"
+              onClick={switchToCustom}
+            >
+              Choisir une période
+            </Button>
+          </div>
+          {/* Champs de dates — visibles uniquement en mode "période libre" */}
+          {dateMode === "custom" && (
+            <div className="flex flex-wrap gap-3 pt-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Date début
+                </label>
+                <Input
+                  type="date"
+                  className="w-40"
+                  value={filters.dateFrom ?? ""}
+                  onChange={(e) => setFilter("dateFrom", e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Date fin
+                </label>
+                <Input
+                  type="date"
+                  className="w-40"
+                  value={filters.dateTo ?? ""}
+                  onChange={(e) => setFilter("dateTo", e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Filtres client, prestataire */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Date début
-            </label>
-            <Input
-              type="date"
-              value={filters.dateFrom ?? ""}
-              onChange={(e) => setFilter("dateFrom", e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Date fin
-            </label>
-            <Input
-              type="date"
-              value={filters.dateTo ?? ""}
-              onChange={(e) => setFilter("dateTo", e.target.value)}
-            />
-          </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">
               Client
