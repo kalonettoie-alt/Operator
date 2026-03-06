@@ -138,6 +138,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Filet de sécurité : si isLoading est toujours true après 5s (TOKEN_REFRESHED
+  // bloqué, réseau lent, cas non anticipé), force le déblocage.
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setIsLoading(false);
+    }, 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // Quand l'utilisateur revient sur l'onglet, re-vérifie la session.
+  // Nécessaire car TOKEN_REFRESHED peut bloquer isLoading si le refresh
+  // échoue silencieusement pendant que l'onglet était en arrière-plan.
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        supabase.auth
+          .getSession()
+          .then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+            setIsLoading(false);
+          })
+          .catch(() => {
+            setIsLoading(false);
+          });
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
   // Déconnexion + redirection
   const signOut = async () => {
     try {
