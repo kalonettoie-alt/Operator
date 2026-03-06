@@ -2,7 +2,7 @@
 // Hooks TanStack Query pour la table logements.
 // La jointure client est faite directement dans la query Supabase.
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import type { Logement } from "@/types/database";
 
@@ -17,6 +17,25 @@ export type LogementWithClient = Logement & {
     email: string;
   } | null;
 };
+
+// Données nécessaires pour créer un logement
+export type CreateLogementInput = {
+  client_id: string;
+  name: string;
+  address: string;
+  city: string;
+  postal_code: string;
+  access_code?: string | null;
+  instructions?: string | null;
+  zone?: string | null;
+  prix_prestataire_ht?: number | null;
+  prix_client_ttc?: number | null;
+  type_blanchisserie?: string | null;
+  prix_blanchisserie?: number | null;
+};
+
+// Données pour la mise à jour (id obligatoire + champs partiels)
+export type UpdateLogementInput = Partial<CreateLogementInput> & { id: string };
 
 // ─── Hook : liste de tous les logements ──────────────────────────────────────
 
@@ -41,6 +60,49 @@ export function useLogements(clientId?: string) {
       const { data, error } = await query;
       if (error) throw error;
       return data as LogementWithClient[];
+    },
+  });
+}
+
+// ─── Hook : créer un logement ─────────────────────────────────────────────────
+
+export function useCreateLogement() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: CreateLogementInput) => {
+      const { data, error } = await supabase
+        .from("logements")
+        .insert(input)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+  });
+}
+
+// ─── Hook : modifier un logement ─────────────────────────────────────────────
+
+export function useUpdateLogement() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...input }: UpdateLogementInput) => {
+      const { data, error } = await supabase
+        .from("logements")
+        .update(input)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
     },
   });
 }

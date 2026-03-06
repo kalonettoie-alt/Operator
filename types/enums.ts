@@ -124,3 +124,15 @@ export const SEPA_STATUSES = {
 
 export type SepaStatus =
   (typeof SEPA_STATUSES)[keyof typeof SEPA_STATUSES];
+
+// ---------------------------------------------------------------------------
+// Types de blanchisserie (logements)
+// ---------------------------------------------------------------------------
+export const BLANCHISSERIE_TYPES = {
+  AUCUNE: 'aucune',
+  INTERVENTION: 'intervention',  // Facturée par intervention
+  FORFAIT: 'forfait',            // Forfait mensuel fixe
+} as const;
+
+export type BlanchisserieType =
+  (typeof BLANCHISSERIE_TYPES)[keyof typeof BLANCHISSERIE_TYPES];
