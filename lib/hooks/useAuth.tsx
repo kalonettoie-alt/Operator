@@ -74,27 +74,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // sur un composant déjà démonté, laissant isLoading = true indéfiniment.
     let isMounted = true;
 
-    // 1. Chargement de la session existante au démarrage
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!isMounted) return;
-
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-
-      if (currentUser) {
-        const userProfile = await loadProfile(currentUser.id);
+    // 1. Chargement de la session existante au démarrage (source de vérité initiale)
+    //
+    // IMPORTANT : le .catch() est obligatoire.
+    // En React Strict Mode + PKCE, deux appels getSession() sont lancés en parallèle.
+    // Le second peut rejeter (code PKCE déjà consommé par le premier). Sans .catch(),
+    // setIsLoading(false) n'est jamais appelé → chargement infini.
+    supabase.auth.getSession()
+      .then(async ({ data: { session }, error }) => {
         if (!isMounted) return;
-        setProfile(userProfile);
-      }
 
-      setIsLoading(false);
-    });
+        if (error) {
+          // Erreur attendue en Strict Mode (code PKCE déjà échangé) — pas critique
+          Sentry.captureException(error, { extra: { context: "getSession" } });
+        }
 
-    // 2. Écoute des changements d'état d'authentification (login / logout)
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+
+        if (currentUser) {
+          const userProfile = await loadProfile(currentUser.id);
+          if (!isMounted) return;
+          setProfile(userProfile);
+        }
+
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        // Garantit que isLoading passe à false même en cas de rejet inattendu
+        if (!isMounted) return;
+        Sentry.captureException(err, { extra: { context: "getSession" } });
+        setIsLoading(false);
+      });
+
+    // 2. Écoute des changements d'état ULTÉRIEURS (login / logout / refresh)
+    //
+    // On ignore INITIAL_SESSION : il est déjà géré par getSession() ci-dessus.
+    // L'écouter ici aussi causerait une double exécution et des conflits de state
+    // en React Strict Mode (sub_A reçoit l'event mais isMounted_A est déjà false,
+    // et sub_B ne le reçoit jamais car il est tiré une seule fois).
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
+      if (event === "INITIAL_SESSION") return; // géré par getSession() plus haut
 
       const currentUser = session?.user ?? null;
       setUser(currentUser);
@@ -106,8 +129,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setProfile(null);
       }
-
-      setIsLoading(false);
     });
 
     // Nettoyage au démontage : désabonnement + flag pour stopper les callbacks async
