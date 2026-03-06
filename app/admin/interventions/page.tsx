@@ -194,30 +194,34 @@ export default function InterventionsPage() {
           />
         </div>
 
-        {/* Sélecteur de période */}
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Période
-          </p>
-          <div className="flex flex-wrap gap-2 items-center">
-            <Button
-              variant={dateMode === "mois" ? "default" : "outline"}
-              size="sm"
-              onClick={switchToCurrentMonth}
-            >
-              Ce mois-ci
-            </Button>
-            <Button
-              variant={dateMode === "custom" ? "default" : "outline"}
-              size="sm"
-              onClick={switchToCustom}
-            >
-              Choisir une période
-            </Button>
+        {/* Période + dates + client + prestataire — tout sur une ligne */}
+        <div className="flex flex-wrap items-end gap-3">
+          {/* Boutons de période */}
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Période
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant={dateMode === "mois" ? "default" : "outline"}
+                size="sm"
+                onClick={switchToCurrentMonth}
+              >
+                Ce mois-ci
+              </Button>
+              <Button
+                variant={dateMode === "custom" ? "default" : "outline"}
+                size="sm"
+                onClick={switchToCustom}
+              >
+                Choisir une période
+              </Button>
+            </div>
           </div>
+
           {/* Champs de dates — visibles uniquement en mode "période libre" */}
           {dateMode === "custom" && (
-            <div className="flex flex-wrap gap-3 pt-1">
+            <>
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">
                   Date début
@@ -240,18 +244,16 @@ export default function InterventionsPage() {
                   onChange={(e) => setFilter("dateTo", e.target.value)}
                 />
               </div>
-            </div>
+            </>
           )}
-        </div>
 
-        {/* Filtres client, prestataire */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {/* Client */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">
               Client
             </label>
             <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
               value={filters.clientId ?? ""}
               onChange={(e) => setFilter("clientId", e.target.value)}
             >
@@ -263,12 +265,14 @@ export default function InterventionsPage() {
               ))}
             </select>
           </div>
+
+          {/* Prestataire */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">
               Prestataire
             </label>
             <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
               value={filters.prestataireId ?? ""}
               onChange={(e) => setFilter("prestataireId", e.target.value)}
             >
