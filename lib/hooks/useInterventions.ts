@@ -203,6 +203,43 @@ export function useDesassignIntervention() {
   });
 }
 
+// ─── Hook : annuler une intervention ─────────────────────────────────────────
+
+export function useAnnulerIntervention() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      interventionId,
+      motif,
+    }: {
+      interventionId: string;
+      motif: string;
+    }) => {
+      const { data, error } = await supabase
+        .from("interventions")
+        .update({
+          status: "annulee",
+          cancellation_reason: motif,
+          prestataire_id: null,
+          assigned_at: null,
+        })
+        .eq("id", interventionId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "all" });
+      if (data?.id) {
+        queryClient.invalidateQueries({ queryKey: [QUERY_KEY, data.id], refetchType: "all" });
+      }
+    },
+  });
+}
+
 // ─── Hook : modifier une intervention ────────────────────────────────────────
 
 export function useUpdateIntervention() {

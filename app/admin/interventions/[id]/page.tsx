@@ -18,6 +18,7 @@ import {
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PhotoGallery } from "@/components/ui/PhotoGallery";
 import { AssignPrestairePanel } from "@/components/ui/AssignPrestairePanel";
+import { AnnulerInterventionDialog } from "@/components/ui/AnnulerInterventionDialog";
 import {
   Card,
   CardContent,
@@ -158,7 +159,7 @@ export default function InterventionDetailPage({
             {TYPE_LABELS[intervention.type] ?? intervention.type}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <StatusBadge status={intervention.status} />
           <Button
             variant="outline"
@@ -168,6 +169,11 @@ export default function InterventionDetailPage({
             <PencilIcon className="size-4 mr-1" />
             Modifier
           </Button>
+          {/* Bouton Annuler — masqué si intervention déjà terminée ou annulée */}
+          {intervention.status !== INTERVENTION_STATUSES.TERMINEE &&
+            intervention.status !== INTERVENTION_STATUSES.ANNULEE && (
+            <AnnulerInterventionDialog interventionId={intervention.id} />
+          )}
         </div>
       </div>
 
