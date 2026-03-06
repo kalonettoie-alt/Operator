@@ -2,7 +2,7 @@
 // Hook TanStack Query pour la table interventions.
 // Supporte des filtres combinables : statut, dates, client, prestataire.
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import type { Intervention } from "@/types/database";
 import type { InterventionStatus } from "@/types/enums";
@@ -37,6 +37,28 @@ export type InterventionDetail = Intervention & {
   client: { id: string; full_name: string; email: string; phone: string | null } | null;
   prestataire: { id: string; full_name: string; phone: string | null } | null;
 };
+
+// Données nécessaires pour créer une intervention
+export type CreateInterventionInput = {
+  logement_id: string;
+  client_id: string;
+  prestataire_id?: string | null;
+  date: string;
+  type: string;
+  status: string;
+  priority: string;
+  nb_voyageurs?: number | null;
+  has_baby?: boolean | null;
+  checkin_meme_jour?: boolean | null;
+  special_instructions?: string | null;
+  blanchisserie_incluse?: boolean | null;
+  prix_blanchisserie?: number | null;
+  prix_client_ttc?: number | null;
+  prix_prestataire_ht?: number | null;
+};
+
+// Données pour la mise à jour
+export type UpdateInterventionInput = Partial<CreateInterventionInput> & { id: string };
 
 // ─── Hook : intervention unique (vue détail) ──────────────────────────────────
 
@@ -88,6 +110,53 @@ export function useInterventions(filters: InterventionFilters = {}) {
       const { data, error } = await query;
       if (error) throw error;
       return data as InterventionWithRelations[];
+    },
+  });
+}
+
+// ─── Hook : créer une intervention ───────────────────────────────────────────
+
+export function useCreateIntervention() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: CreateInterventionInput) => {
+      const { data, error } = await supabase
+        .from("interventions")
+        .insert(input)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+  });
+}
+
+// ─── Hook : modifier une intervention ────────────────────────────────────────
+
+export function useUpdateIntervention() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...input }: UpdateInterventionInput) => {
+      const { data, error } = await supabase
+        .from("interventions")
+        .update(input)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      // Invalide la liste ET le détail de l'intervention modifiée
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+      if (data?.id) {
+        queryClient.invalidateQueries({ queryKey: [QUERY_KEY, data.id] });
+      }
     },
   });
 }

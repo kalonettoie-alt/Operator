@@ -5,8 +5,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { PlusIcon } from "lucide-react";
 import { useInterventions, type InterventionFilters } from "@/lib/hooks/useInterventions";
 import { useClients, usePrestataires } from "@/lib/hooks/useProfiles";
+import { InterventionForm } from "@/components/forms/InterventionForm";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   Table,
@@ -18,6 +20,12 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { INTERVENTION_STATUSES, type InterventionStatus } from "@/types/enums";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -109,6 +117,9 @@ function getCurrentMonthRange(): { dateFrom: string; dateTo: string } {
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function InterventionsPage() {
+  // Dialog de création
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
   // Mode de filtrage des dates : 'mois' (ce mois-ci, défaut) ou 'custom' (période libre)
   const [dateMode, setDateMode] = useState<"mois" | "custom">("mois");
 
@@ -174,11 +185,17 @@ export default function InterventionsPage() {
             </p>
           )}
         </div>
-        {hasActiveFilters && (
-          <Button variant="outline" size="sm" onClick={resetFilters}>
-            Réinitialiser les filtres
+        <div className="flex items-center gap-2">
+          {hasActiveFilters && (
+            <Button variant="outline" size="sm" onClick={resetFilters}>
+              Réinitialiser les filtres
+            </Button>
+          )}
+          <Button onClick={() => setIsCreateOpen(true)}>
+            <PlusIcon className="size-4 mr-2" />
+            Nouvelle intervention
           </Button>
-        )}
+        </div>
       </div>
 
       {/* Filtres */}
@@ -361,6 +378,19 @@ export default function InterventionsPage() {
           </Table>
         </div>
       )}
+
+      {/* Dialog création */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nouvelle intervention</DialogTitle>
+          </DialogHeader>
+          <InterventionForm
+            key={isCreateOpen ? "open" : "closed"}
+            onSuccess={() => setIsCreateOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

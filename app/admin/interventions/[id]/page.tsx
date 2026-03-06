@@ -3,11 +3,18 @@
 // Page : détail d'une intervention (admin)
 // Affiche toutes les infos + le rapport avec photos.
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { ArrowLeft, AlertTriangle, PencilIcon } from "lucide-react";
 import { useIntervention } from "@/lib/hooks/useInterventions";
 import { useRapport } from "@/lib/hooks/useRapports";
+import { InterventionForm } from "@/components/forms/InterventionForm";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PhotoGallery } from "@/components/ui/PhotoGallery";
 import {
@@ -99,6 +106,7 @@ export default function InterventionDetailPage({
   const { id } = use(params);
   const { data: intervention, isLoading, error } = useIntervention(id);
   const { data: rapport, isLoading: rapportLoading } = useRapport(id);
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   // ── États de chargement ──
   if (isLoading) {
@@ -149,7 +157,17 @@ export default function InterventionDetailPage({
             {TYPE_LABELS[intervention.type] ?? intervention.type}
           </p>
         </div>
-        <StatusBadge status={intervention.status} />
+        <div className="flex items-center gap-3">
+          <StatusBadge status={intervention.status} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsEditOpen(true)}
+          >
+            <PencilIcon className="size-4 mr-1" />
+            Modifier
+          </Button>
+        </div>
       </div>
 
       {/* Section : informations générales */}
@@ -301,6 +319,22 @@ export default function InterventionDetailPage({
           </CardContent>
         </Card>
       )}
+
+      {/* Dialog modification */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Modifier — {intervention.logement?.name ?? "Intervention"}
+            </DialogTitle>
+          </DialogHeader>
+          <InterventionForm
+            key={intervention.id}
+            intervention={intervention}
+            onSuccess={() => setIsEditOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
