@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PhotoGallery } from "@/components/ui/PhotoGallery";
+import { AssignPrestairePanel } from "@/components/ui/AssignPrestairePanel";
 import {
   Card,
   CardContent,
@@ -26,7 +27,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { Json } from "@/types/database";
-import { INTERVENTION_TYPES } from "@/types/enums";
+import { INTERVENTION_TYPES, INTERVENTION_STATUSES } from "@/types/enums";
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
 
@@ -208,13 +209,26 @@ export default function InterventionDetailPage({
             {intervention.client?.phone && (
               <InfoRow label="Tél. client" value={intervention.client.phone} />
             )}
-            <InfoRow label="Prestataire" value={
-              intervention.prestataire?.full_name ?? (
-                <span className="text-muted-foreground">Non assigné</span>
-              )
-            } />
-            {intervention.prestataire?.phone && (
-              <InfoRow label="Tél. prestataire" value={intervention.prestataire.phone} />
+            {/* Prestataire — affiché uniquement si déjà assigné ET statut autre que a_attribuer/assignee */}
+            {intervention.status !== INTERVENTION_STATUSES.A_ATTRIBUER &&
+              intervention.status !== INTERVENTION_STATUSES.ASSIGNEE && (
+              <>
+                <InfoRow label="Prestataire" value={
+                  intervention.prestataire?.full_name ?? (
+                    <span className="text-muted-foreground">Non assigné</span>
+                  )
+                } />
+                {intervention.prestataire?.phone && (
+                  <InfoRow label="Tél. prestataire" value={intervention.prestataire.phone} />
+                )}
+              </>
+            )}
+            {/* Panneau d'assignation/désassignation pour les statuts éligibles */}
+            {(intervention.status === INTERVENTION_STATUSES.A_ATTRIBUER ||
+              intervention.status === INTERVENTION_STATUSES.ASSIGNEE) && (
+              <div className="pt-1">
+                <AssignPrestairePanel intervention={intervention} />
+              </div>
             )}
           </CardContent>
         </Card>

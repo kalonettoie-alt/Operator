@@ -137,6 +137,72 @@ export function useCreateIntervention() {
   });
 }
 
+// ─── Hook : assigner un prestataire ──────────────────────────────────────────
+
+export function useAssignIntervention() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      interventionId,
+      prestataireId,
+    }: {
+      interventionId: string;
+      prestataireId: string;
+    }) => {
+      const { data, error } = await supabase
+        .from("interventions")
+        .update({
+          prestataire_id: prestataireId,
+          status: "assignee",
+          assigned_at: new Date().toISOString(),
+        })
+        .eq("id", interventionId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "all" });
+      if (data?.id) {
+        queryClient.invalidateQueries({ queryKey: [QUERY_KEY, data.id], refetchType: "all" });
+      }
+    },
+  });
+}
+
+// ─── Hook : désassigner un prestataire ───────────────────────────────────────
+
+export function useDesassignIntervention() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (interventionId: string) => {
+      const { data, error } = await supabase
+        .from("interventions")
+        .update({
+          prestataire_id: null,
+          status: "a_attribuer",
+          assigned_at: null,
+        })
+        .eq("id", interventionId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "all" });
+      if (data?.id) {
+        queryClient.invalidateQueries({ queryKey: [QUERY_KEY, data.id], refetchType: "all" });
+      }
+    },
+  });
+}
+
 // ─── Hook : modifier une intervention ────────────────────────────────────────
 
 export function useUpdateIntervention() {
