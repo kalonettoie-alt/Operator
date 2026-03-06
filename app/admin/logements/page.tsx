@@ -132,21 +132,19 @@ export default function LogementsPage() {
               <TableRow>
                 <TableHead>Nom</TableHead>
                 <TableHead>Adresse</TableHead>
-                <TableHead>Ville</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Zone</TableHead>
                 <TableHead className="text-right">Prix client TTC</TableHead>
                 <TableHead className="text-right">Prix presta HT</TableHead>
-                <TableHead className="w-24" />
+                <TableHead className="sticky right-0 bg-card w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {logements.map((logement) => (
                 <TableRow key={logement.id}>
                   <TableCell className="font-medium">{logement.name}</TableCell>
-                  <TableCell>{logement.address}</TableCell>
-                  <TableCell>
-                    {logement.postal_code} {logement.city}
+                  <TableCell className="text-muted-foreground text-sm">
+                    {logement.address}, {logement.postal_code} {logement.city}
                   </TableCell>
                   <TableCell>
                     {logement.client?.full_name ?? (
@@ -166,7 +164,7 @@ export default function LogementsPage() {
                   <TableCell className="text-right tabular-nums">
                     {formatPrix(logement.prix_prestataire_ht)}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="sticky right-0 bg-card">
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
