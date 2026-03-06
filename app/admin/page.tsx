@@ -76,16 +76,15 @@ function KpiCard({ label, value, sublabel, highlight }: KpiCardProps) {
 
 // KPI spécial : compteur X/Y pour le jour
 function TodayProgressCard({ done, total }: { done: number; total: number }) {
-  const allDone = total > 0 && done === total;
   return (
-    <Card className={allDone ? "border-green-500/30 bg-green-50 dark:bg-green-950/20" : "border-primary/30 bg-primary/5"}>
+    <Card className="border-primary/30 bg-primary/5">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           Aujourd&apos;hui
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <p className={`text-3xl font-bold tabular-nums ${allDone ? "text-green-600" : "text-primary"}`}>
+        <p className="text-3xl font-bold tabular-nums text-primary">
           <span>{done}</span>
           <span className="text-xl font-medium text-muted-foreground">/{total}</span>
         </p>
