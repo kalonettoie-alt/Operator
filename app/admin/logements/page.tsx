@@ -137,7 +137,7 @@ export default function LogementsPage() {
                 <TableHead>Zone</TableHead>
                 <TableHead className="text-right">Prix client TTC</TableHead>
                 <TableHead className="text-right">Prix presta HT</TableHead>
-                <TableHead />
+                <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
