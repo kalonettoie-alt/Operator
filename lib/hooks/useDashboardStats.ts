@@ -71,9 +71,9 @@ export function useDashboardStats() {
     },
   });
 
-  // Prochaines interventions (aujourd'hui + futur, max 10)
+  // Interventions du jour
   const upcoming = useQuery<InterventionRow[]>({
-    queryKey: ["dashboard", "upcoming", today],
+    queryKey: ["dashboard", "today", today],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("interventions")
@@ -83,10 +83,9 @@ export function useDashboardStats() {
           client:profiles!interventions_client_id_fkey(id, full_name),
           prestataire:profiles!interventions_prestataire_id_fkey(id, full_name)
         `)
-        .gte("date", today)
+        .eq("date", today)
         .neq("status", INTERVENTION_STATUSES.ANNULEE)
-        .order("date", { ascending: true })
-        .limit(10);
+        .order("status", { ascending: true });
       if (error) throw error;
       return data as InterventionRow[];
     },
@@ -97,7 +96,8 @@ export function useDashboardStats() {
 
   const kpis = {
     // Compteurs
-    countToday: monthlyData.filter((i) => i.date === today).length,
+    countTodayDone: monthlyData.filter((i) => i.date === today && i.status === INTERVENTION_STATUSES.TERMINEE).length,
+    countTodayTotal: monthlyData.filter((i) => i.date === today && i.status !== INTERVENTION_STATUSES.ANNULEE).length,
     countWeek: monthlyData.filter((i) => i.date >= weekStart && i.date <= weekEnd).length,
     countMonth: monthlyData.filter((i) => i.status !== INTERVENTION_STATUSES.ANNULEE).length,
     countAAttribuer: monthlyData.filter((i) => i.status === INTERVENTION_STATUSES.A_ATTRIBUER).length,

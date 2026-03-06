@@ -74,6 +74,27 @@ function KpiCard({ label, value, sublabel, highlight }: KpiCardProps) {
   );
 }
 
+// KPI spécial : compteur X/Y pour le jour
+function TodayProgressCard({ done, total }: { done: number; total: number }) {
+  const allDone = total > 0 && done === total;
+  return (
+    <Card className={allDone ? "border-green-500/30 bg-green-50 dark:bg-green-950/20" : "border-primary/30 bg-primary/5"}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          Aujourd&apos;hui
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className={`text-3xl font-bold tabular-nums ${allDone ? "text-green-600" : "text-primary"}`}>
+          <span>{done}</span>
+          <span className="text-xl font-medium text-muted-foreground">/{total}</span>
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">terminées / à faire</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminDashboardPage() {
@@ -111,7 +132,7 @@ export default function AdminDashboardPage() {
           Interventions
         </h2>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-          <KpiCard label="Aujourd'hui" value={kpis.countToday} />
+          <TodayProgressCard done={kpis.countTodayDone} total={kpis.countTodayTotal} />
           <KpiCard label="Cette semaine" value={kpis.countWeek} />
           <KpiCard label="Ce mois" value={kpis.countMonth} sublabel="hors annulées" />
           <KpiCard
@@ -154,11 +175,11 @@ export default function AdminDashboardPage() {
         </div>
       </section>
 
-      {/* Prochaines interventions */}
+      {/* Interventions du jour */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Prochaines interventions
+            Interventions du jour
           </h2>
           <Link href="/admin/interventions" className="text-xs text-primary hover:underline">
             Voir tout &rarr;
@@ -167,7 +188,7 @@ export default function AdminDashboardPage() {
 
         {!upcoming.data?.length ? (
           <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-            Aucune intervention à venir.
+            Aucune intervention aujourd&apos;hui.
           </div>
         ) : (
           <div className="rounded-lg border bg-card">
