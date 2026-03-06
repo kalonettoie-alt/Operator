@@ -130,8 +130,9 @@ export function useCreateIntervention() {
       return data;
     },
     onSuccess: () => {
-      // refetchType: 'all' force le refetch même si la page liste n'est pas montée
+      // Invalide la liste d'interventions ET le dashboard (clés séparées)
       queryClient.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "all" });
     },
   });
 }
@@ -153,8 +154,9 @@ export function useUpdateIntervention() {
       return data;
     },
     onSuccess: (data) => {
-      // refetchType: 'all' force le refetch liste + détail même si non montés
+      // Invalide liste + détail + dashboard (clés séparées)
       queryClient.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "all" });
       if (data?.id) {
         queryClient.invalidateQueries({ queryKey: [QUERY_KEY, data.id], refetchType: "all" });
       }
