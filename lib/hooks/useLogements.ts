@@ -106,3 +106,22 @@ export function useUpdateLogement() {
     },
   });
 }
+
+// ─── Hook : supprimer un logement ────────────────────────────────────────────
+
+export function useDeleteLogement() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("logements")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+  });
+}

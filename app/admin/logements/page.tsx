@@ -1,12 +1,17 @@
 "use client";
 
-// Page : liste des logements avec création et modification.
-// Chaque logement peut être modifié via un Dialog pré-rempli.
+// Page : liste des logements avec création, modification et suppression.
 
 import { useState } from "react";
-import { PlusIcon, PencilIcon } from "lucide-react";
+import { PlusIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
+import * as Sentry from "@sentry/nextjs";
 
-import { useLogements, type LogementWithClient } from "@/lib/hooks/useLogements";
+import {
+  useLogements,
+  useDeleteLogement,
+  type LogementWithClient,
+} from "@/lib/hooks/useLogements";
 import { LogementForm } from "@/components/forms/LogementForm";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +20,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -38,26 +45,40 @@ function formatPrix(value: number | null): string {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function LøgementsPage() {
+export default function LogementsPage() {
   const { data: logements, isLoading, error } = useLogements();
+  const deleteMutation = useDeleteLogement();
 
-  // Dialog : null = fermé, undefined = création, LogementWithClient = édition
+  // Dialog création/édition : null = fermé, undefined = création, LogementWithClient = édition
   const [dialogLogement, setDialogLogement] = useState<
     LogementWithClient | null | undefined
   >(null);
 
-  const isOpen = dialogLogement !== null;
+  // Dialog suppression : null = fermé, sinon le logement à supprimer
+  const [deleteTarget, setDeleteTarget] = useState<LogementWithClient | null>(null);
 
   function openCreate() {
-    setDialogLogement(undefined); // undefined = mode création
+    setDialogLogement(undefined);
   }
 
   function openEdit(logement: LogementWithClient) {
     setDialogLogement(logement);
   }
 
-  function closeDialog() {
+  function closeFormDialog() {
     setDialogLogement(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id);
+      toast.success(`"${deleteTarget.name}" supprimé avec succès`);
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error("Erreur lors de la suppression");
+      Sentry.captureException(err);
+    }
   }
 
   return (
@@ -146,14 +167,25 @@ export default function LøgementsPage() {
                     {formatPrix(logement.prix_prestataire_ht)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEdit(logement)}
-                      aria-label="Modifier"
-                    >
-                      <PencilIcon className="size-4" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(logement)}
+                        aria-label="Modifier"
+                      >
+                        <PencilIcon className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleteTarget(logement)}
+                        aria-label="Supprimer"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2Icon className="size-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -163,7 +195,10 @@ export default function LøgementsPage() {
       )}
 
       {/* Dialog création / édition */}
-      <Dialog open={isOpen} onOpenChange={(open) => !open && closeDialog()}>
+      <Dialog
+        open={dialogLogement !== null}
+        onOpenChange={(open) => !open && closeFormDialog()}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -172,12 +207,47 @@ export default function LøgementsPage() {
                 : "Ajouter un logement"}
             </DialogTitle>
           </DialogHeader>
-          {/* Le formulaire est re-monté à chaque ouverture grâce à la key */}
+          {/* Re-monté à chaque ouverture grâce à la key */}
           <LogementForm
             key={dialogLogement?.id ?? "new"}
             logement={dialogLogement ?? undefined}
-            onSuccess={closeDialog}
+            onSuccess={closeFormDialog}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmation de suppression */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Supprimer le logement</DialogTitle>
+            <DialogDescription>
+              Êtes-vous sûr de vouloir supprimer{" "}
+              <span className="font-medium text-foreground">
+                &quot;{deleteTarget?.name}&quot;
+              </span>{" "}
+              ? Cette action est irréversible.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Suppression…" : "Supprimer"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
