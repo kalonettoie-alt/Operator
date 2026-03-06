@@ -5,7 +5,7 @@
 
 import { useEffect } from "react";
 import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
@@ -55,13 +55,18 @@ interface Props {
   onSuccess: () => void;
 }
 
+// ─── Classes partagées ────────────────────────────────────────────────────────
+
+const selectClass =
+  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50";
+
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export function InterventionForm({ intervention, onSuccess }: Props) {
   const isEdit = !!intervention;
 
-  const { data: logements } = useLogements();
-  const { data: prestataires } = usePrestataires();
+  const { data: logements, isLoading: logementsLoading } = useLogements();
+  const { data: prestataires, isLoading: prestatairesLoading } = usePrestataires();
   const createMutation = useCreateIntervention();
   const updateMutation = useUpdateIntervention();
 
@@ -70,18 +75,20 @@ export function InterventionForm({ intervention, onSuccess }: Props) {
     handleSubmit,
     watch,
     setValue,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       logement_id: intervention?.logement_id ?? "",
-      prestataire_id: intervention?.prestataire_id ?? null,
+      // null → chaîne vide pour le select, on convertit au submit
+      prestataire_id: intervention?.prestataire_id ?? "",
       date: intervention?.date ?? "",
       type: (intervention?.type as FormData["type"]) ?? INTERVENTION_TYPES.MENAGE,
       nb_voyageurs: intervention?.nb_voyageurs ?? null,
       has_baby: intervention?.has_baby ?? false,
       checkin_meme_jour: intervention?.checkin_meme_jour ?? false,
-      special_instructions: intervention?.special_instructions ?? null,
+      special_instructions: intervention?.special_instructions ?? "",
       blanchisserie_incluse: intervention?.blanchisserie_incluse ?? false,
       prix_blanchisserie: intervention?.prix_blanchisserie ?? null,
       prix_client_ttc: intervention?.prix_client_ttc ?? null,
@@ -100,7 +107,7 @@ export function InterventionForm({ intervention, onSuccess }: Props) {
     setValue("prix_client_ttc", logement.prix_client_ttc ?? null);
     setValue("prix_prestataire_ht", logement.prix_prestataire_ht ?? null);
     setValue("prix_blanchisserie", logement.prix_blanchisserie ?? null);
-    // Activer la blanchisserie si le logement en a une
+    // Activer la blanchisserie si le logement en prévoit une
     if (logement.type_blanchisserie && logement.type_blanchisserie !== "aucune") {
       setValue("blanchisserie_incluse", true);
     }
@@ -118,17 +125,20 @@ export function InterventionForm({ intervention, onSuccess }: Props) {
         ? INTERVENTION_PRIORITIES.HAUTE
         : INTERVENTION_PRIORITIES.NORMALE;
 
+      // Convertir la chaîne vide du select en null pour la BDD
+      const prestataire_id = data.prestataire_id || null;
+
       if (isEdit) {
         await updateMutation.mutateAsync({
           id: intervention.id,
           ...data,
-          prestataire_id: data.prestataire_id || null,
+          prestataire_id,
           status,
           priority,
         });
         toast.success("Intervention modifiée avec succès");
       } else {
-        // client_id est obligatoire en BDD : on le récupère depuis le logement sélectionné
+        // client_id obligatoire en BDD : récupéré depuis le logement sélectionné
         const logement = logements?.find((l) => l.id === data.logement_id);
         if (!logement) {
           toast.error("Logement introuvable");
@@ -136,7 +146,7 @@ export function InterventionForm({ intervention, onSuccess }: Props) {
         }
         await createMutation.mutateAsync({
           ...data,
-          prestataire_id: data.prestataire_id || null,
+          prestataire_id,
           client_id: logement.client_id,
           status,
           priority,
@@ -152,25 +162,35 @@ export function InterventionForm({ intervention, onSuccess }: Props) {
     }
   };
 
-  // Classes partagées
-  const selectClass =
-    "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
-
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-      {/* Logement */}
+
+      {/* Logement — Controller pour que la valeur s'affiche même après chargement async */}
       <div className="space-y-1">
         <label className="text-sm font-medium" htmlFor="logement_id">
           Logement *
         </label>
-        <select id="logement_id" className={selectClass} {...register("logement_id")}>
-          <option value="">Sélectionner un logement</option>
-          {logements?.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name} — {l.city}
-            </option>
-          ))}
-        </select>
+        <Controller
+          name="logement_id"
+          control={control}
+          render={({ field }) => (
+            <select
+              {...field}
+              id="logement_id"
+              className={selectClass}
+              disabled={logementsLoading}
+            >
+              <option value="">
+                {logementsLoading ? "Chargement…" : "Sélectionner un logement"}
+              </option>
+              {logements?.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} — {l.city}
+                </option>
+              ))}
+            </select>
+          )}
+        />
         {errors.logement_id && (
           <p className="text-xs text-destructive">{errors.logement_id.message}</p>
         )}
@@ -191,34 +211,52 @@ export function InterventionForm({ intervention, onSuccess }: Props) {
           <label className="text-sm font-medium" htmlFor="type">
             Type *
           </label>
-          <select id="type" className={selectClass} {...register("type")}>
-            <option value={INTERVENTION_TYPES.MENAGE}>Ménage</option>
-            <option value={INTERVENTION_TYPES.ETAT_LIEUX}>État des lieux</option>
-            <option value={INTERVENTION_TYPES.MAINTENANCE}>Maintenance</option>
-          </select>
+          <Controller
+            name="type"
+            control={control}
+            render={({ field }) => (
+              <select {...field} id="type" className={selectClass}>
+                <option value={INTERVENTION_TYPES.MENAGE}>Ménage</option>
+                <option value={INTERVENTION_TYPES.ETAT_LIEUX}>État des lieux</option>
+                <option value={INTERVENTION_TYPES.MAINTENANCE}>Maintenance</option>
+              </select>
+            )}
+          />
         </div>
       </div>
 
-      {/* Prestataire */}
+      {/* Prestataire — Controller pour la même raison que logement */}
       <div className="space-y-1">
         <label className="text-sm font-medium" htmlFor="prestataire_id">
           Prestataire{" "}
           <span className="text-muted-foreground font-normal">(optionnel)</span>
         </label>
-        <select
-          id="prestataire_id"
-          className={selectClass}
-          {...register("prestataire_id")}
-        >
-          <option value="">Non assigné — statut &quot;À attribuer&quot;</option>
-          {prestataires?.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.full_name}
-            </option>
-          ))}
-        </select>
+        <Controller
+          name="prestataire_id"
+          control={control}
+          render={({ field }) => (
+            <select
+              {...field}
+              value={field.value ?? ""}
+              id="prestataire_id"
+              className={selectClass}
+              disabled={prestatairesLoading}
+            >
+              <option value="">
+                {prestatairesLoading
+                  ? "Chargement…"
+                  : "Non assigné — statut « À attribuer »"}
+              </option>
+              {prestataires?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+          )}
+        />
         <p className="text-xs text-muted-foreground">
-          Si un prestataire est sélectionné, le statut sera automatiquement
+          Si un prestataire est sélectionné, le statut devient automatiquement
           &quot;Assignée&quot;.
         </p>
       </div>
