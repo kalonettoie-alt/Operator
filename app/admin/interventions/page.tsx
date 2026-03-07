@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, UserX } from "lucide-react";
 import { useInterventions, type InterventionFilters } from "@/lib/hooks/useInterventions";
 import { useClients, usePrestataires } from "@/lib/hooks/useProfiles";
 import { InterventionForm } from "@/components/forms/InterventionForm";
@@ -364,7 +364,19 @@ export default function InterventionsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={intervention.status} />
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={intervention.status} />
+                      {/* Icône si au moins un prestataire a déjà refusé cette intervention */}
+                      {(intervention.refused_by?.length ?? 0) > 0 && (
+                        <span
+                          title={`Refusée par ${intervention.refused_by!.length} prestataire${intervention.refused_by!.length > 1 ? "s" : ""}`}
+                          className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-950 dark:text-orange-400"
+                        >
+                          <UserX className="size-3" />
+                          {intervention.refused_by!.length}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatPrix(intervention.prix_client_ttc)}

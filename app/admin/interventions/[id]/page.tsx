@@ -5,9 +5,10 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle, PencilIcon } from "lucide-react";
+import { ArrowLeft, AlertTriangle, PencilIcon, UserX } from "lucide-react";
 import { useIntervention } from "@/lib/hooks/useInterventions";
 import { useRapport } from "@/lib/hooks/useRapports";
+import { useProfilesByIds } from "@/lib/hooks/useProfiles";
 import { InterventionForm } from "@/components/forms/InterventionForm";
 import {
   Dialog,
@@ -109,6 +110,10 @@ export default function InterventionDetailPage({
   const { data: intervention, isLoading, error } = useIntervention(id);
   const { data: rapport, isLoading: rapportLoading } = useRapport(id);
   const [isEditOpen, setIsEditOpen] = useState(false);
+
+  // Résolution des noms des prestataires ayant refusé (refused_by est un tableau d'UUIDs)
+  const refusedByIds = intervention?.refused_by ?? [];
+  const { data: refusedByProfiles } = useProfilesByIds(refusedByIds);
 
   // ── États de chargement ──
   if (isLoading) {
@@ -329,6 +334,31 @@ export default function InterventionDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* Section : prestataires ayant refusé */}
+      {refusedByIds.length > 0 && (
+        <Card className="border-orange-200 bg-orange-50/50 dark:border-orange-900/40 dark:bg-orange-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-orange-700 dark:text-orange-400">
+              <UserX className="size-4" />
+              Refusée par {refusedByIds.length} prestataire{refusedByIds.length > 1 ? "s" : ""}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {refusedByProfiles ? (
+              <ul className="space-y-1">
+                {refusedByProfiles.map((p) => (
+                  <li key={p.id} className="text-sm font-medium">
+                    {p.full_name}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">Chargement…</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Annulation */}
       {intervention.cancellation_reason && (

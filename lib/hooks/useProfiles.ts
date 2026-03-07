@@ -32,6 +32,29 @@ export function useClients() {
   });
 }
 
+// ─── Hook : profils par liste d'UUIDs ────────────────────────────────────────
+
+/**
+ * Récupère les profils correspondant à une liste d'UUIDs.
+ * Utilisé pour résoudre les noms dans refused_by[].
+ * La requête est désactivée si la liste est vide.
+ */
+export function useProfilesByIds(ids: string[]) {
+  return useQuery<Pick<Profile, "id" | "full_name">[]>({
+    queryKey: [QUERY_KEY, { ids }],
+    enabled: ids.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", ids);
+
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 // ─── Hook : liste des prestataires ───────────────────────────────────────────
 
 /**
