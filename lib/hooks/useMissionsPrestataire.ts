@@ -27,8 +27,15 @@ export interface PrestataireDashboardStats {
 
 // ─── Helpers de dates ─────────────────────────────────────────────────────────
 
+// IMPORTANT : utilise les composantes locales (getFullYear/getMonth/getDate)
+// et NON pas toISOString() qui retourne l'heure UTC.
+// Ex. en UTC+1 à minuit : toISOString() donnerait "2026-03-06" au lieu de "2026-03-07".
 function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function getDateRanges() {
