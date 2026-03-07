@@ -272,14 +272,24 @@ export function useMissionDetail(id: string) {
           logement:logements!interventions_logement_id_fkey(
             id, name, address, city, postal_code, instructions, access_code
           ),
-          reservation:reservations!interventions_reservation_id_fkey(
+          reservation_direct:reservations!interventions_reservation_id_fkey(
+            check_in, check_out, guest_name, nb_guests, platform, has_baby
+          ),
+          reservations_linked:reservations!reservations_intervention_id_fkey(
             check_in, check_out, guest_name, nb_guests, platform, has_baby
           )`
         )
         .eq("id", id)
         .single();
       if (error) throw error;
-      return data as MissionDetail;
+
+      // Normalise : on prend la réservation directe ou la première liée
+      const raw = data as Record<string, unknown>;
+      const reservationDirect = raw.reservation_direct as MissionDetail["reservation"] | null;
+      const reservationsLinked = raw.reservations_linked as MissionDetail["reservation"][] | null;
+      const reservation = reservationDirect ?? reservationsLinked?.[0] ?? null;
+
+      return { ...raw, reservation } as MissionDetail;
     },
   });
 }
