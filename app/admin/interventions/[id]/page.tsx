@@ -5,7 +5,7 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle, PencilIcon, UserX } from "lucide-react";
+import { ArrowLeft, AlertTriangle, PencilIcon, UserX, Camera } from "lucide-react";
 import { useIntervention } from "@/lib/hooks/useInterventions";
 import { useRapport } from "@/lib/hooks/useRapports";
 import { useProfilesByIds } from "@/lib/hooks/useProfiles";
@@ -39,6 +39,16 @@ function formatDate(dateStr: string): string {
     day: "2-digit",
     month: "long",
     year: "numeric",
+  }).format(new Date(dateStr));
+}
+
+function formatDateTime(dateStr: string): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(new Date(dateStr));
 }
 
@@ -280,11 +290,28 @@ export default function InterventionDetailPage({
         )}
       </div>
 
-      {/* Section : photos état des lieux */}
+      {/* Section : état des lieux — visible uniquement si des photos ont été uploadées */}
       {etatLieuxPhotos.length > 0 && (
         <Card>
-          <CardHeader><CardTitle>Photos état des lieux</CardTitle></CardHeader>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Camera className="size-4" />
+              État des lieux
+              <span className="ml-auto text-sm font-normal text-muted-foreground">
+                {etatLieuxPhotos.length} photo{etatLieuxPhotos.length > 1 ? "s" : ""}
+              </span>
+            </CardTitle>
+            {intervention.etat_lieux_at && (
+              <p className="text-xs text-muted-foreground">
+                Réalisé le{" "}
+                <span className="font-medium text-foreground">
+                  {formatDateTime(intervention.etat_lieux_at)}
+                </span>
+              </p>
+            )}
+          </CardHeader>
           <CardContent>
+            {/* PhotoGallery inclut la lightbox : cliquer sur une miniature l'agrandit */}
             <PhotoGallery photos={etatLieuxPhotos} />
           </CardContent>
         </Card>
