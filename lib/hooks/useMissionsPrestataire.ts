@@ -246,6 +246,14 @@ export type MissionDetail = Intervention & {
     instructions: string | null;
     access_code: string | null;
   } | null;
+  reservation: {
+    check_in: string;
+    check_out: string;
+    guest_name: string | null;
+    nb_guests: number | null;
+    platform: string;
+    has_baby: boolean | null;
+  } | null;
 };
 
 /**
@@ -263,6 +271,9 @@ export function useMissionDetail(id: string) {
           `*,
           logement:logements!interventions_logement_id_fkey(
             id, name, address, city, postal_code, instructions, access_code
+          ),
+          reservation:reservations!interventions_reservation_id_fkey(
+            check_in, check_out, guest_name, nb_guests, platform, has_baby
           )`
         )
         .eq("id", id)

@@ -18,6 +18,8 @@ import {
   Euro,
   CheckCircle2,
   XCircle,
+  Baby,
+  Building2,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
@@ -57,6 +59,13 @@ function formatPrix(value: number | null): string {
     minimumFractionDigits: 2,
   }).format(value);
 }
+
+const PLATFORM_LABELS: Record<string, string> = {
+  airbnb: "Airbnb",
+  booking: "Booking.com",
+  direct: "Direct",
+  autre: "Autre",
+};
 
 const TYPE_LABELS: Record<string, string> = {
   [INTERVENTION_TYPES.MENAGE]: "Ménage",
@@ -223,13 +232,6 @@ export default function MissionDetailPage({
                 label="Date"
                 value={formatDate(mission.date)}
               />
-              {mission.nb_voyageurs !== null && (
-                <InfoRow
-                  icon={<Users className="size-4" />}
-                  label="Nombre de voyageurs"
-                  value={mission.nb_voyageurs}
-                />
-              )}
               <InfoRow
                 icon={<Euro className="size-4" />}
                 label="Votre rémunération HT"
@@ -243,6 +245,69 @@ export default function MissionDetailPage({
           ) : null}
         </CardContent>
       </Card>
+
+      {/* Informations de la réservation */}
+      {(isLoading || mission?.reservation) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="size-4" />
+              Réservation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {isLoading ? (
+              <div className="space-y-4 py-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex gap-3">
+                    <Skeleton className="size-4 shrink-0 mt-1" />
+                    <div className="space-y-1.5 flex-1">
+                      <Skeleton className="h-3 w-16" />
+                      <Skeleton className="h-4 w-40" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : mission?.reservation ? (
+              <>
+                <InfoRow
+                  icon={<Calendar className="size-4" />}
+                  label="Check-in → Check-out"
+                  value={`${formatDate(mission.reservation.check_in)} → ${formatDate(mission.reservation.check_out)}`}
+                />
+                {mission.reservation.guest_name && (
+                  <InfoRow
+                    icon={<Users className="size-4" />}
+                    label="Voyageur"
+                    value={mission.reservation.guest_name}
+                  />
+                )}
+                {mission.reservation.nb_guests !== null && (
+                  <InfoRow
+                    icon={<Users className="size-4" />}
+                    label="Nombre de voyageurs"
+                    value={
+                      <>
+                        {mission.reservation.nb_guests} personne{mission.reservation.nb_guests > 1 ? "s" : ""}
+                        {mission.reservation.has_baby && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Baby className="size-3" /> bébé
+                          </span>
+                        )}
+                      </>
+                    }
+                  />
+                )}
+                <InfoRow
+                  icon={<Building2 className="size-4" />}
+                  label="Plateforme"
+                  value={PLATFORM_LABELS[mission.reservation.platform] ?? mission.reservation.platform}
+                />
+              </>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Informations du logement */}
       <Card>
