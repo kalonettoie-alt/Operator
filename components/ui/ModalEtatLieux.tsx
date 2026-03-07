@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const MIN_PHOTOS = 2;
-const STORAGE_BUCKET = "intervention-reports";
+const STORAGE_BUCKET = "intervention-photos";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
