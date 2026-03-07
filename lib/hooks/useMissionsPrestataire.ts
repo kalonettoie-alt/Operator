@@ -246,14 +246,6 @@ export type MissionDetail = Intervention & {
     instructions: string | null;
     access_code: string | null;
   } | null;
-  reservation: {
-    check_in: string;
-    check_out: string;
-    guest_name: string | null;
-    nb_guests: number | null;
-    platform: string;
-    has_baby: boolean | null;
-  } | null;
 };
 
 /**
@@ -265,7 +257,6 @@ export function useMissionDetail(id: string) {
     queryKey: ["mission-detail", id],
     enabled: !!id,
     queryFn: async () => {
-      // 1. Charger l'intervention + logement
       const { data, error } = await supabase
         .from("interventions")
         .select(
@@ -277,51 +268,7 @@ export function useMissionDetail(id: string) {
         .eq("id", id)
         .single();
       if (error) throw error;
-
-      const intervention = data as Intervention & { logement: MissionDetail["logement"] };
-
-      // 2. Chercher la réservation — 3 stratégies dans l'ordre :
-      //    a) via interventions.reservation_id (FK directe)
-      //    b) via reservations.intervention_id (FK inverse)
-      //    c) via logement + plage de dates (check_in <= date <= check_out)
-      let reservation: MissionDetail["reservation"] = null;
-
-      // Stratégie a : FK directe
-      if (intervention.reservation_id) {
-        const { data: res } = await supabase
-          .from("reservations")
-          .select("check_in, check_out, guest_name, nb_guests, platform, has_baby")
-          .eq("id", intervention.reservation_id)
-          .maybeSingle();
-        if (res) reservation = res;
-      }
-
-      // Stratégie b : FK inverse
-      if (!reservation) {
-        const { data: res } = await supabase
-          .from("reservations")
-          .select("check_in, check_out, guest_name, nb_guests, platform, has_baby")
-          .eq("intervention_id", id)
-          .maybeSingle();
-        if (res) reservation = res;
-      }
-
-      // Stratégie c : logement + plage de dates
-      if (!reservation && intervention.logement_id && intervention.date) {
-        const { data: res } = await supabase
-          .from("reservations")
-          .select("check_in, check_out, guest_name, nb_guests, platform, has_baby")
-          .eq("logement_id", intervention.logement_id)
-          .lte("check_in", intervention.date)
-          .gte("check_out", intervention.date)
-          .not("status", "eq", "cancelled")
-          .order("check_in", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (res) reservation = res;
-      }
-
-      return { ...intervention, reservation } as MissionDetail;
+      return data as MissionDetail;
     },
   });
 }
