@@ -3,7 +3,7 @@
 // Toutes les requêtes filtrent sur l'id du prestataire connecté.
 // La RLS Supabase constitue un second garde-fou côté serveur.
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import type { Intervention } from "@/types/database";
 import { INTERVENTION_STATUSES } from "@/types/enums";
@@ -171,6 +171,97 @@ export function useMissionsPrestataire(
       const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as MissionWithLogement[];
+    },
+  });
+}
+
+// ─── Hook : accepter une mission (RPC) ───────────────────────────────────────
+
+/**
+ * Appelle la RPC `accepter_intervention`.
+ * Met à jour status → 'acceptee'.
+ */
+export function useAccepterMission() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (interventionId: string) => {
+      const { data, error } = await supabase.rpc("accepter_intervention", {
+        p_intervention_id: interventionId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prestataire-dashboard"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["missions-prestataire"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["mission-detail"], refetchType: "all" });
+    },
+  });
+}
+
+// ─── Hook : refuser une mission (RPC) ────────────────────────────────────────
+
+/**
+ * Appelle la RPC `refuser_intervention`.
+ * Met à jour status → 'a_attribuer', prestataire_id → null,
+ * et ajoute l'UUID du prestataire dans refused_by[].
+ */
+export function useRefuserMission() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (interventionId: string) => {
+      const { data, error } = await supabase.rpc("refuser_intervention", {
+        p_intervention_id: interventionId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prestataire-dashboard"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["missions-prestataire"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["mission-detail"], refetchType: "all" });
+    },
+  });
+}
+
+// ─── Hook : détail d'une mission (vue prestataire) ────────────────────────────
+
+// Type enrichi : uniquement les champs utiles au prestataire
+export type MissionDetail = Intervention & {
+  logement: {
+    id: string;
+    name: string;
+    address: string;
+    city: string;
+    postal_code: string;
+    instructions: string | null;
+    access_code: string | null;
+  } | null;
+};
+
+/**
+ * Charge le détail d'une mission pour la vue prestataire.
+ * La RLS garantit qu'un prestataire ne peut voir que ses propres missions.
+ */
+export function useMissionDetail(id: string) {
+  return useQuery<MissionDetail>({
+    queryKey: ["mission-detail", id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("interventions")
+        .select(
+          `*,
+          logement:logements!interventions_logement_id_fkey(
+            id, name, address, city, postal_code, instructions, access_code
+          )`
+        )
+        .eq("id", id)
+        .single();
+      if (error) throw error;
+      return data as MissionDetail;
     },
   });
 }
