@@ -224,19 +224,28 @@ export function useCommencerMission() {
       interventionId: string;
       photosUrls: string[];
     }) => {
-      // Étape 1 : enregistrer les URLs des photos d'état des lieux
-      const { error: updateError } = await supabase
-        .from("interventions")
-        .update({ photos_etat_lieux: photosUrls })
-        .eq("id", interventionId);
-      if (updateError) throw updateError;
-
-      // Étape 2 : passer le statut à 'en_cours' via la RPC sécurisée
+      // Un seul appel RPC (SECURITY DEFINER) qui :
+      //  - stocke photos_etat_lieux[]
+      //  - renseigne etat_lieux_at = now()
+      //  - passe status → 'en_cours' et started_at = now()
+      //
+      // PAS de UPDATE direct : la RLS bloquerait silencieusement la requête
+      // sans lever d'erreur (0 lignes mises à jour).
       const { data, error: rpcError } = await supabase.rpc(
         "commencer_intervention",
-        { p_intervention_id: interventionId }
+        {
+          p_intervention_id: interventionId,
+          p_photos_etat_lieux: photosUrls,
+        }
       );
       if (rpcError) throw rpcError;
+
+      // La RPC renvoie { success: false, error: "..." } si les règles métier échouent
+      const result = data as { success: boolean; error?: string } | null;
+      if (result && !result.success) {
+        throw new Error(result.error ?? "Erreur lors du démarrage de la mission");
+      }
+
       return data;
     },
     onSuccess: () => {
