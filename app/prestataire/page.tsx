@@ -1,6 +1,8 @@
 "use client";
 
 // Dashboard Prestataire — missions du jour, en attente, semaine, revenus du mois.
+// Utilise des skeletons inline plutôt qu'un spinner full-page pour éviter
+// les chargements bloquants dus à la cascade auth → query.
 
 import Link from "next/link";
 import { CalendarDays, Clock, CheckCircle2, Euro } from "lucide-react";
@@ -8,6 +10,7 @@ import { CalendarDays, Clock, CheckCircle2, Euro } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { usePrestataireDashboard } from "@/lib/hooks/useMissionsPrestataire";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -48,9 +51,10 @@ interface KpiCardProps {
   sublabel?: string;
   icon: React.ReactNode;
   highlight?: boolean;
+  loading?: boolean;
 }
 
-function KpiCard({ label, value, sublabel, icon, highlight }: KpiCardProps) {
+function KpiCard({ label, value, sublabel, icon, highlight, loading }: KpiCardProps) {
   return (
     <Card className={highlight ? "border-primary/30 bg-primary/5" : ""}>
       <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
@@ -60,11 +64,20 @@ function KpiCard({ label, value, sublabel, icon, highlight }: KpiCardProps) {
         <span className="text-muted-foreground">{icon}</span>
       </CardHeader>
       <CardContent>
-        <p className={`text-3xl font-bold tabular-nums ${highlight ? "text-primary" : ""}`}>
-          {value}
-        </p>
-        {sublabel && (
-          <p className="text-xs text-muted-foreground mt-1">{sublabel}</p>
+        {loading ? (
+          <>
+            <Skeleton className="h-9 w-16 mb-1" />
+            <Skeleton className="h-3 w-24" />
+          </>
+        ) : (
+          <>
+            <p className={`text-3xl font-bold tabular-nums ${highlight ? "text-primary" : ""}`}>
+              {value}
+            </p>
+            {sublabel && (
+              <p className="text-xs text-muted-foreground mt-1">{sublabel}</p>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -113,31 +126,40 @@ function MissionRow({ mission }: MissionRowProps) {
   );
 }
 
+// ─── Composant : skeleton d'une section missions ──────────────────────────────
+
+function MissionsSectionSkeleton() {
+  return (
+    <div className="px-4 py-2 space-y-3">
+      {[1, 2].map((i) => (
+        <div key={i} className="flex items-center justify-between py-2">
+          <div className="space-y-1.5">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-3 w-28" />
+          </div>
+          <Skeleton className="h-5 w-20 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PrestataireDashboardPage() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
   const {
     data: stats,
     isLoading,
     error,
   } = usePrestataireDashboard(user?.id ?? null);
 
-  if (authLoading || isLoading) {
-    return (
-      <div className="p-6 flex items-center justify-center min-h-[60vh]">
-        <p className="text-muted-foreground animate-pulse">Chargement…</p>
-      </div>
-    );
-  }
+  // On n'attend plus authLoading pour afficher la page :
+  // - La structure est immédiatement visible
+  // - Les KPI cards affichent des skeletons tant que les données ne sont pas dispo
+  // - Ce pattern évite la cascade auth → query → rendu qui causait les chargements infinis
 
-  if (error) {
-    return (
-      <div className="p-6">
-        <p className="text-destructive">Erreur lors du chargement du dashboard.</p>
-      </div>
-    );
-  }
+  const loading = isLoading || !user;
 
   const {
     missionsAujourdhui,
@@ -167,52 +189,71 @@ export default function PrestataireDashboardPage() {
         </p>
       </div>
 
-      {/* KPI Cards */}
+      {/* Erreur de chargement */}
+      {error && (
+        <p className="text-sm text-destructive">
+          Erreur lors du chargement — réessayez dans quelques instants.
+        </p>
+      )}
+
+      {/* KPI Cards — affichées immédiatement avec skeleton si données pas dispo */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
           label="Aujourd'hui"
           value={missionsAujourdhui.length}
           sublabel="mission(s) du jour"
           icon={<CalendarDays className="size-4" />}
-          highlight={missionsAujourdhui.length > 0}
+          highlight={!loading && missionsAujourdhui.length > 0}
+          loading={loading}
         />
         <KpiCard
           label="En attente"
           value={missionsEnAttente.length}
           sublabel="à accepter ou refuser"
           icon={<Clock className="size-4" />}
-          highlight={missionsEnAttente.length > 0}
+          highlight={!loading && missionsEnAttente.length > 0}
+          loading={loading}
         />
         <KpiCard
           label="Cette semaine"
           value={missionsASemaine.length}
           sublabel="missions à venir"
           icon={<CheckCircle2 className="size-4" />}
+          loading={loading}
         />
         <KpiCard
           label="Revenus"
           value={formatPrix(revenusduMois)}
           sublabel={getCurrentMonthLabel()}
           icon={<Euro className="size-4" />}
-          highlight
+          highlight={!loading}
+          loading={loading}
         />
       </div>
 
       {/* Missions en attente d'acceptation */}
-      {missionsEnAttente.length > 0 && (
+      {(loading || missionsEnAttente.length > 0) && (
         <Card className="border-blue-200 bg-blue-50/50">
           <CardHeader className="pb-2">
             <CardTitle className="text-base text-blue-700 flex items-center gap-2">
               <Clock className="size-4" />
-              En attente de votre réponse ({missionsEnAttente.length})
+              {loading ? (
+                <Skeleton className="h-4 w-48" />
+              ) : (
+                `En attente de votre réponse (${missionsEnAttente.length})`
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-2 pb-2">
-            <div className="divide-y divide-border/40">
-              {missionsEnAttente.map((m) => (
-                <MissionRow key={m.id} mission={m} />
-              ))}
-            </div>
+            {loading ? (
+              <MissionsSectionSkeleton />
+            ) : (
+              <div className="divide-y divide-border/40">
+                {missionsEnAttente.map((m) => (
+                  <MissionRow key={m.id} mission={m} />
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -226,7 +267,9 @@ export default function PrestataireDashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-2 pb-2">
-          {missionsAujourdhui.length === 0 ? (
+          {loading ? (
+            <MissionsSectionSkeleton />
+          ) : missionsAujourdhui.length === 0 ? (
             <p className="text-sm text-muted-foreground px-4 py-3">
               Aucune mission aujourd&apos;hui.
             </p>
@@ -249,7 +292,9 @@ export default function PrestataireDashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-2 pb-2">
-          {missionsASemaine.length === 0 ? (
+          {loading ? (
+            <MissionsSectionSkeleton />
+          ) : missionsASemaine.length === 0 ? (
             <p className="text-sm text-muted-foreground px-4 py-3">
               Aucune mission prévue cette semaine.
             </p>

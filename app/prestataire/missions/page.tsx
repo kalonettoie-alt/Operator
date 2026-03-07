@@ -1,7 +1,7 @@
 "use client";
 
 // Liste complète des missions du prestataire connecté.
-// Filtres : statut, période.
+// Filtres : statut. Skeletons inline pour éviter les chargements bloquants.
 // La RLS Supabase garantit que seules les missions du prestataire sont renvoyées.
 
 import { useState } from "react";
@@ -14,11 +14,9 @@ import {
   type MissionWithLogement,
 } from "@/lib/hooks/useMissionsPrestataire";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { INTERVENTION_STATUSES } from "@/types/enums";
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
@@ -40,19 +38,14 @@ const TYPE_LABELS: Record<string, string> = {
 
 // ─── Options de filtre statut ─────────────────────────────────────────────────
 
-interface StatusOption {
-  value: string;
-  label: string;
-}
-
-const STATUS_OPTIONS: StatusOption[] = [
-  { value: "", label: "Tous" },
+const STATUS_OPTIONS = [
+  { value: "", label: "Toutes" },
   { value: INTERVENTION_STATUSES.ASSIGNEE, label: "En attente" },
   { value: INTERVENTION_STATUSES.ACCEPTEE, label: "Acceptées" },
   { value: INTERVENTION_STATUSES.EN_COURS, label: "En cours" },
   { value: INTERVENTION_STATUSES.TERMINEE, label: "Terminées" },
   { value: INTERVENTION_STATUSES.ANNULEE, label: "Annulées" },
-];
+] as const;
 
 // ─── Composant : carte mission ────────────────────────────────────────────────
 
@@ -82,10 +75,29 @@ function MissionCard({ mission }: { mission: MissionWithLogement }) {
   );
 }
 
+// ─── Composant : skeleton d'une carte mission ─────────────────────────────────
+
+function MissionCardSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-3 w-24 mt-1" />
+          </div>
+          <Skeleton className="h-5 w-20 rounded-full shrink-0" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MissionsPrestatairePage() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [statusFilter, setStatusFilter] = useState<string>("");
 
   const {
@@ -96,21 +108,9 @@ export default function MissionsPrestatairePage() {
     status: statusFilter || undefined,
   });
 
-  if (authLoading || isLoading) {
-    return (
-      <div className="p-6 flex items-center justify-center min-h-[60vh]">
-        <p className="text-muted-foreground animate-pulse">Chargement…</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <p className="text-destructive">Erreur lors du chargement des missions.</p>
-      </div>
-    );
-  }
+  // On n'attend plus authLoading : la structure de la page est affichée
+  // immédiatement avec des skeletons. Évite la cascade auth → query → rendu.
+  const loading = isLoading || !user;
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-3xl mx-auto">
@@ -119,9 +119,20 @@ export default function MissionsPrestatairePage() {
       <div>
         <h1 className="text-2xl font-bold">Mes missions</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          {missions?.length ?? 0} mission(s) trouvée(s)
+          {loading ? (
+            <Skeleton className="inline-block h-3.5 w-28" />
+          ) : (
+            `${missions?.length ?? 0} mission(s) trouvée(s)`
+          )}
         </p>
       </div>
+
+      {/* Erreur */}
+      {error && (
+        <p className="text-sm text-destructive">
+          Erreur lors du chargement — réessayez dans quelques instants.
+        </p>
+      )}
 
       {/* Filtres statut */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -139,7 +150,13 @@ export default function MissionsPrestatairePage() {
       </div>
 
       {/* Liste des missions */}
-      {!missions?.length ? (
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <MissionCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : !missions?.length ? (
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-sm">Aucune mission trouvée pour ce filtre.</p>
         </div>
