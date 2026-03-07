@@ -230,6 +230,20 @@ export default function MissionDetailPage({
                   value={mission.nb_voyageurs}
                 />
               )}
+              {mission.has_baby && (
+                <InfoRow
+                  icon={<Users className="size-4" />}
+                  label="Bébé présent"
+                  value="Oui — prévoir lit bébé"
+                />
+              )}
+              {mission.checkin_meme_jour && (
+                <InfoRow
+                  icon={<Calendar className="size-4" />}
+                  label="Check-in le même jour"
+                  value="Oui — délai serré"
+                />
+              )}
               <InfoRow
                 icon={<Euro className="size-4" />}
                 label="Votre rémunération HT"
