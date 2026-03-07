@@ -5,7 +5,7 @@
 // Si status = 'assignee' : boutons Accepter / Refuser avec confirmation.
 // Après action : invalidation cache + redirection vers le dashboard.
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -18,6 +18,7 @@ import {
   Euro,
   CheckCircle2,
   XCircle,
+  PlayCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
@@ -27,6 +28,7 @@ import {
   useAccepterMission,
   useRefuserMission,
 } from "@/lib/hooks/useMissionsPrestataire";
+import { ModalEtatLieux } from "@/components/ui/ModalEtatLieux";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -99,6 +101,7 @@ export default function MissionDetailPage({
   const { data: mission, isLoading, error } = useMissionDetail(id);
   const accepterMutation = useAccepterMission();
   const refuserMutation = useRefuserMission();
+  const [isEtatLieuxOpen, setIsEtatLieuxOpen] = useState(false);
 
   const isMutating = accepterMutation.isPending || refuserMutation.isPending;
 
@@ -194,6 +197,26 @@ export default function MissionDetailPage({
           >
             <XCircle className="size-4 mr-1.5" />
             {refuserMutation.isPending ? "Refus…" : "Refuser"}
+          </Button>
+        </div>
+      )}
+
+      {/* Bouton Commencer — visible uniquement si status = 'acceptee' */}
+      {!isLoading && mission?.status === INTERVENTION_STATUSES.ACCEPTEE && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold">Prêt à démarrer ?</p>
+            <p className="text-xs text-muted-foreground">
+              Avant de commencer, prenez au moins 2 photos de l&apos;appartement
+              pour constituer votre état des lieux.
+            </p>
+          </div>
+          <Button
+            onClick={() => setIsEtatLieuxOpen(true)}
+            className="w-full sm:w-auto"
+          >
+            <PlayCircle className="size-4 mr-2" />
+            Commencer la mission
           </Button>
         </div>
       )}
@@ -332,6 +355,16 @@ export default function MissionDetailPage({
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Modal état des lieux (photos avant démarrage) */}
+      {mission && (
+        <ModalEtatLieux
+          interventionId={id}
+          open={isEtatLieuxOpen}
+          onOpenChange={setIsEtatLieuxOpen}
+          onSuccess={() => router.push("/prestataire")}
+        />
       )}
     </div>
   );

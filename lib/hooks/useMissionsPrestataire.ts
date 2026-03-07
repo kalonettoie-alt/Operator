@@ -207,6 +207,46 @@ export function useAccepterMission() {
   });
 }
 
+// ─── Hook : commencer une mission (photos état des lieux + RPC) ──────────────
+
+/**
+ * 1. Met à jour photos_etat_lieux[] avec les URLs des photos uploadées.
+ * 2. Appelle la RPC `commencer_intervention` → status = 'en_cours', started_at = now().
+ */
+export function useCommencerMission() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      interventionId,
+      photosUrls,
+    }: {
+      interventionId: string;
+      photosUrls: string[];
+    }) => {
+      // Étape 1 : enregistrer les URLs des photos d'état des lieux
+      const { error: updateError } = await supabase
+        .from("interventions")
+        .update({ photos_etat_lieux: photosUrls })
+        .eq("id", interventionId);
+      if (updateError) throw updateError;
+
+      // Étape 2 : passer le statut à 'en_cours' via la RPC sécurisée
+      const { data, error: rpcError } = await supabase.rpc(
+        "commencer_intervention",
+        { p_intervention_id: interventionId }
+      );
+      if (rpcError) throw rpcError;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prestataire-dashboard"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["missions-prestataire"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["mission-detail"], refetchType: "all" });
+    },
+  });
+}
+
 // ─── Hook : refuser une mission (RPC) ────────────────────────────────────────
 
 /**
