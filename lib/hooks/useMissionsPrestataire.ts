@@ -265,31 +265,63 @@ export function useMissionDetail(id: string) {
     queryKey: ["mission-detail", id],
     enabled: !!id,
     queryFn: async () => {
+      // 1. Charger l'intervention + logement
       const { data, error } = await supabase
         .from("interventions")
         .select(
           `*,
           logement:logements!interventions_logement_id_fkey(
             id, name, address, city, postal_code, instructions, access_code
-          ),
-          reservation_direct:reservations!interventions_reservation_id_fkey(
-            check_in, check_out, guest_name, nb_guests, platform, has_baby
-          ),
-          reservations_linked:reservations!reservations_intervention_id_fkey(
-            check_in, check_out, guest_name, nb_guests, platform, has_baby
           )`
         )
         .eq("id", id)
         .single();
       if (error) throw error;
 
-      // Normalise : on prend la réservation directe ou la première liée
-      const raw = data as Record<string, unknown>;
-      const reservationDirect = raw.reservation_direct as MissionDetail["reservation"] | null;
-      const reservationsLinked = raw.reservations_linked as MissionDetail["reservation"][] | null;
-      const reservation = reservationDirect ?? reservationsLinked?.[0] ?? null;
+      const intervention = data as Intervention & { logement: MissionDetail["logement"] };
 
-      return { ...raw, reservation } as MissionDetail;
+      // 2. Chercher la réservation — 3 stratégies dans l'ordre :
+      //    a) via interventions.reservation_id (FK directe)
+      //    b) via reservations.intervention_id (FK inverse)
+      //    c) via logement + plage de dates (check_in <= date <= check_out)
+      let reservation: MissionDetail["reservation"] = null;
+
+      // Stratégie a : FK directe
+      if (intervention.reservation_id) {
+        const { data: res } = await supabase
+          .from("reservations")
+          .select("check_in, check_out, guest_name, nb_guests, platform, has_baby")
+          .eq("id", intervention.reservation_id)
+          .maybeSingle();
+        if (res) reservation = res;
+      }
+
+      // Stratégie b : FK inverse
+      if (!reservation) {
+        const { data: res } = await supabase
+          .from("reservations")
+          .select("check_in, check_out, guest_name, nb_guests, platform, has_baby")
+          .eq("intervention_id", id)
+          .maybeSingle();
+        if (res) reservation = res;
+      }
+
+      // Stratégie c : logement + plage de dates
+      if (!reservation && intervention.logement_id && intervention.date) {
+        const { data: res } = await supabase
+          .from("reservations")
+          .select("check_in, check_out, guest_name, nb_guests, platform, has_baby")
+          .eq("logement_id", intervention.logement_id)
+          .lte("check_in", intervention.date)
+          .gte("check_out", intervention.date)
+          .not("status", "eq", "cancelled")
+          .order("check_in", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (res) reservation = res;
+      }
+
+      return { ...intervention, reservation } as MissionDetail;
     },
   });
 }
