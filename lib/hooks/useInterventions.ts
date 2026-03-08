@@ -88,9 +88,19 @@ export function useIntervention(id: string) {
 export function useInterventions(filters: InterventionFilters = {}) {
   const { status, dateFrom, dateTo, clientId, prestataireId } = filters;
 
+  // ── [DIAGNOSTIC] ────────────────────────────────────────────────────────────
+  // Ce log s'affiche à chaque rendu du composant qui utilise useInterventions.
+  // Si "enabled: true" mais la queryFn n'est jamais loggée → problème TanStack.
+  // Si ce log n'apparaît jamais → le composant ne monte pas du tout.
+  console.log('[QUERY] useInterventions called — filters:', JSON.stringify(filters));
+  // ────────────────────────────────────────────────────────────────────────────
+
   return useQuery<InterventionWithRelations[]>({
     queryKey: [QUERY_KEY, filters],
     queryFn: async () => {
+      // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────
+      console.log('[QUERY] useInterventions queryFn executing — fetching from Supabase...');
+      // ──────────────────────────────────────────────────────────────────────
       let query = supabase
         .from("interventions")
         .select(`
@@ -108,6 +118,11 @@ export function useInterventions(filters: InterventionFilters = {}) {
       if (prestataireId)  query = query.eq("prestataire_id", prestataireId);
 
       const { data, error } = await query;
+
+      // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────
+      console.log('[QUERY] useInterventions result — rows:', data?.length ?? 0, 'error:', error);
+      // ──────────────────────────────────────────────────────────────────────
+
       if (error) throw error;
       return data as InterventionWithRelations[];
     },

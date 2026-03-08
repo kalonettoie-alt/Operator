@@ -74,15 +74,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // sur un composant déjà démonté, laissant isLoading = true indéfiniment.
     let isMounted = true;
 
+    // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────────
+    console.log('[AUTH] 1. useEffect mounted');
+    // ─────────────────────────────────────────────────────────────────────────
+
     // 1. Chargement de la session existante au démarrage (source de vérité initiale)
     //
     // IMPORTANT : le .catch() est obligatoire.
     // En React Strict Mode + PKCE, deux appels getSession() sont lancés en parallèle.
     // Le second peut rejeter (code PKCE déjà consommé par le premier). Sans .catch(),
     // setIsLoading(false) n'est jamais appelé → chargement infini.
+
+    // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────────
+    console.log('[AUTH] 2. calling getSession...');
+    // ─────────────────────────────────────────────────────────────────────────
+
     supabase.auth.getSession()
       .then(async ({ data: { session }, error }) => {
         if (!isMounted) return;
+
+        // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
+        console.log('[AUTH] 3. getSession result:', session ? 'session found' : 'no session', 'error:', error);
+        // ────────────────────────────────────────────────────────────────────
 
         if (error) {
           // Erreur attendue en Strict Mode (code PKCE déjà échangé) — pas critique
@@ -99,12 +112,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         setIsLoading(false);
+
+        // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
+        console.log('[AUTH] 4. isLoading set to false');
+        // ────────────────────────────────────────────────────────────────────
       })
       .catch((err) => {
         // Garantit que isLoading passe à false même en cas de rejet inattendu
         if (!isMounted) return;
         Sentry.captureException(err, { extra: { context: "getSession" } });
         setIsLoading(false);
+
+        // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
+        console.log('[AUTH] 4. isLoading set to false (via catch)', err);
+        // ────────────────────────────────────────────────────────────────────
       });
 
     // 2. Écoute des changements d'état ULTÉRIEURS (login / logout / refresh)
@@ -116,6 +137,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────
+      console.log('[AUTH] 5. onAuthStateChange event:', event, 'isMounted:', isMounted);
+      // ──────────────────────────────────────────────────────────────────────
+
       if (!isMounted) return;
       if (event === "INITIAL_SESSION") return; // géré par getSession() plus haut
 

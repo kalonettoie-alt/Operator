@@ -61,6 +61,10 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // ── [DIAGNOSTIC] — visible dans le terminal Next.js (pas la console navigateur)
+  console.log('[MIDDLEWARE] path:', pathname, 'has session:', !!user);
+  // ────────────────────────────────────────────────────────────────────────────
+
   // ── 1. Non connecté ──────────────────────────────────────────────────────────
   if (!user) {
     // Déjà sur /login → laisser passer
