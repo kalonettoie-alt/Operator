@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   XCircle,
   PlayCircle,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
@@ -29,6 +30,7 @@ import {
   useRefuserMission,
 } from "@/lib/hooks/useMissionsPrestataire";
 import { ModalEtatLieux } from "@/components/ui/ModalEtatLieux";
+import { ModalRapportIntervention } from "@/components/ui/ModalRapportIntervention";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -102,6 +104,7 @@ export default function MissionDetailPage({
   const accepterMutation = useAccepterMission();
   const refuserMutation = useRefuserMission();
   const [isEtatLieuxOpen, setIsEtatLieuxOpen] = useState(false);
+  const [isRapportOpen, setIsRapportOpen] = useState(false);
 
   const isMutating = accepterMutation.isPending || refuserMutation.isPending;
 
@@ -217,6 +220,28 @@ export default function MissionDetailPage({
           >
             <PlayCircle className="size-4 mr-2" />
             Commencer la mission
+          </Button>
+        </div>
+      )}
+
+      {/* Section Terminer — visible uniquement si status = 'en_cours' */}
+      {!isLoading && mission?.status === INTERVENTION_STATUSES.EN_COURS && (
+        <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30 p-4 space-y-3">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-green-800 dark:text-green-200">
+              Mission en cours
+            </p>
+            <p className="text-xs text-green-700/80 dark:text-green-300/80">
+              Cochez la checklist, prenez au moins 2 photos après le ménage, puis
+              soumettez votre rapport pour terminer la mission.
+            </p>
+          </div>
+          <Button
+            onClick={() => setIsRapportOpen(true)}
+            className="w-full sm:w-auto"
+          >
+            <ClipboardList className="size-4 mr-2" />
+            Remplir le rapport et terminer
           </Button>
         </div>
       )}
@@ -363,6 +388,21 @@ export default function MissionDetailPage({
           interventionId={id}
           open={isEtatLieuxOpen}
           onOpenChange={setIsEtatLieuxOpen}
+          onSuccess={() => router.push("/prestataire")}
+        />
+      )}
+
+      {/* Modal rapport de fin d'intervention (checklist + photos après + dégâts) */}
+      {mission && (
+        <ModalRapportIntervention
+          interventionId={id}
+          checklistTemplate={
+            Array.isArray(mission.logement?.checklist_template)
+              ? (mission.logement.checklist_template as string[])
+              : null
+          }
+          open={isRapportOpen}
+          onOpenChange={setIsRapportOpen}
           onSuccess={() => router.push("/prestataire")}
         />
       )}

@@ -282,6 +282,68 @@ export function useRefuserMission() {
   });
 }
 
+// ─── Hook : terminer une mission (rapport + RPC) ─────────────────────────────
+
+/** Une tâche de la checklist avec son état de complétion */
+export interface TacheChecklist {
+  label: string;
+  done: boolean;
+}
+
+/**
+ * Soumet le rapport de fin d'intervention et termine la mission.
+ * Appelle la RPC terminer_intervention (SECURITY DEFINER) qui :
+ *   - crée le rapport dans la table rapports
+ *   - passe status → 'terminee', completed_at = now()
+ */
+export function useTerminerMission() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      interventionId,
+      photosIntervention,
+      tachesEffectuees,
+      degatsSignales,
+      degatsDescription,
+      degatsPhotos,
+    }: {
+      interventionId: string;
+      photosIntervention: string[];
+      tachesEffectuees: TacheChecklist[];
+      degatsSignales: boolean;
+      degatsDescription: string | null;
+      degatsPhotos: string[];
+    }) => {
+      const { data, error: rpcError } = await supabase.rpc(
+        "terminer_intervention",
+        {
+          p_intervention_id:     interventionId,
+          p_photos_intervention: photosIntervention,
+          p_taches_effectuees:   tachesEffectuees as unknown as import("@/types/database").Json,
+          p_degats_signales:     degatsSignales,
+          p_degats_description:  degatsDescription,
+          p_degats_photos:       degatsPhotos.length > 0 ? degatsPhotos : null,
+        }
+      );
+      if (rpcError) throw rpcError;
+
+      const result = data as { success: boolean; error?: string } | null;
+      if (result && !result.success) {
+        throw new Error(result.error ?? "Erreur lors de la fin de la mission");
+      }
+
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prestataire-dashboard"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["missions-prestataire"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["mission-detail"], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["rapports"], refetchType: "all" });
+    },
+  });
+}
+
 // ─── Hook : détail d'une mission (vue prestataire) ────────────────────────────
 
 // Type enrichi : uniquement les champs utiles au prestataire
@@ -294,6 +356,8 @@ export type MissionDetail = Intervention & {
     postal_code: string;
     instructions: string | null;
     access_code: string | null;
+    /** Tâches à effectuer spécifiques au logement (tableau de strings) */
+    checklist_template: string[] | null;
   } | null;
 };
 
@@ -311,7 +375,8 @@ export function useMissionDetail(id: string) {
         .select(
           `*,
           logement:logements!interventions_logement_id_fkey(
-            id, name, address, city, postal_code, instructions, access_code
+            id, name, address, city, postal_code, instructions, access_code,
+            checklist_template
           )`
         )
         .eq("id", id)

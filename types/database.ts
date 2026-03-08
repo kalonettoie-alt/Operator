@@ -615,7 +615,7 @@ export type Database = {
         Returns: Json
       }
       commencer_intervention: {
-        Args: { p_intervention_id: string }
+        Args: { p_intervention_id: string; p_photos_etat_lieux?: string[] | null }
         Returns: Json
       }
       get_user_role: { Args: never; Returns: string }
@@ -624,7 +624,14 @@ export type Database = {
         Returns: Json
       }
       terminer_intervention: {
-        Args: { p_intervention_id: string }
+        Args: {
+          p_intervention_id: string
+          p_photos_intervention?: string[] | null
+          p_taches_effectuees?: Json | null
+          p_degats_signales?: boolean | null
+          p_degats_description?: string | null
+          p_degats_photos?: string[] | null
+        }
         Returns: Json
       }
     }
