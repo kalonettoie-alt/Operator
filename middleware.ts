@@ -34,6 +34,10 @@ export async function middleware(request: NextRequest) {
 
   // Client Supabase SSR avec gestion des cookies de session
   // On utilise la clé anon (publique) — le middleware ne bypass PAS le RLS
+  // ── [DIAGNOSTIC] ───────────────────────────────────────────────────────────
+  let tokenRefreshHappened = false;
+  // ────────────────────────────────────────────────────────────────────────────
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -43,6 +47,10 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
+          // ── [DIAGNOSTIC] ─────────────────────────────────────────────────
+          tokenRefreshHappened = true;
+          console.log('[MIDDLEWARE] ⚠️  setAll called (token refresh!) — cookies:', cookiesToSet.map(c => c.name));
+          // ──────────────────────────────────────────────────────────────────
           // Appliquer les cookies sur la requête ET la réponse (pour le refresh du JWT)
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
@@ -62,7 +70,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // ── [DIAGNOSTIC] — visible dans le terminal Next.js (pas la console navigateur)
-  console.log('[MIDDLEWARE] path:', pathname, 'has session:', !!user);
+  console.log('[MIDDLEWARE] path:', pathname, 'has session:', !!user, '| token refresh:', tokenRefreshHappened);
   // ────────────────────────────────────────────────────────────────────────────
 
   // ── 1. Non connecté ──────────────────────────────────────────────────────────
@@ -73,6 +81,9 @@ export async function middleware(request: NextRequest) {
     // Toute autre route → /login
     const url = request.nextUrl.clone();
     url.pathname = '/login';
+    // ── [DIAGNOSTIC] ────────────────────────────────────────────────────────
+    console.log('[MIDDLEWARE] ❌ redirect → /login (no user) | token refresh lost:', tokenRefreshHappened);
+    // ────────────────────────────────────────────────────────────────────────
     return NextResponse.redirect(url);
   }
 
@@ -89,6 +100,9 @@ export async function middleware(request: NextRequest) {
   if (!role) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
+    // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────
+    console.log('[MIDDLEWARE] ❌ redirect → /login (no role) | token refresh lost:', tokenRefreshHappened);
+    // ──────────────────────────────────────────────────────────────────────
     return NextResponse.redirect(url);
   }
 
@@ -98,6 +112,9 @@ export async function middleware(request: NextRequest) {
   if (pathname === '/login' || pathname === '/') {
     const url = request.nextUrl.clone();
     url.pathname = dashboard;
+    // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────
+    console.log('[MIDDLEWARE] ↩️  redirect → dashboard:', dashboard, '| token refresh lost:', tokenRefreshHappened);
+    // ──────────────────────────────────────────────────────────────────────
     return NextResponse.redirect(url);
   }
 
@@ -106,6 +123,9 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith(prefix) && role !== requiredRole) {
       const url = request.nextUrl.clone();
       url.pathname = dashboard;
+      // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
+      console.log('[MIDDLEWARE] ↩️  redirect → dashboard (wrong role) | token refresh lost:', tokenRefreshHappened);
+      // ──────────────────────────────────────────────────────────────────────
       return NextResponse.redirect(url);
     }
   }

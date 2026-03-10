@@ -139,6 +139,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       // ── [DIAGNOSTIC] ──────────────────────────────────────────────────────
       console.log('[AUTH] 5. onAuthStateChange event:', event, 'isMounted:', isMounted);
+      if (event === 'SIGNED_OUT') {
+        // La stack trace va révéler qui déclenche le SIGNED_OUT :
+        // - Supabase interne (token refresh échoué) → sera dans la lib @supabase/auth-js
+        // - Appel explicite → sera dans notre code
+        console.trace('[AUTH] SIGNED_OUT triggered — stack trace:');
+        console.log('[AUTH] SIGNED_OUT session at time of event:', session);
+      }
       // ──────────────────────────────────────────────────────────────────────
 
       if (!isMounted) return;
