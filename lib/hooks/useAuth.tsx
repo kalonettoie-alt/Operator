@@ -103,14 +103,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const currentUser = session?.user ?? null;
+        // ── [DIAGNOSTIC] ──────────────────────────────────────────────────
+        console.log('[AUTH] setUser called, user id:', user?.id, '→', currentUser?.id, '(context: getSession)');
+        // ──────────────────────────────────────────────────────────────────
         setUser(currentUser);
 
         if (currentUser) {
           const userProfile = await loadProfile(currentUser.id);
           if (!isMounted) return;
+          // ── [DIAGNOSTIC] ────────────────────────────────────────────────
+          console.log('[AUTH] setProfile called (context: getSession)', userProfile ? 'profile found' : 'null');
+          // ──────────────────────────────────────────────────────────────────
           setProfile(userProfile);
         }
 
+        // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
+        console.log('[AUTH] setIsLoading:', false, '(context: getSession success)');
+        // ────────────────────────────────────────────────────────────────────
         setIsLoading(false);
 
         // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
@@ -121,6 +130,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Garantit que isLoading passe à false même en cas de rejet inattendu
         if (!isMounted) return;
         Sentry.captureException(err, { extra: { context: "getSession" } });
+        // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
+        console.log('[AUTH] setIsLoading:', false, '(context: getSession catch)');
+        // ────────────────────────────────────────────────────────────────────
         setIsLoading(false);
 
         // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
@@ -152,13 +164,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (event === "INITIAL_SESSION") return; // géré par getSession() plus haut
 
       const currentUser = session?.user ?? null;
+      // ── [DIAGNOSTIC] ────────────────────────────────────────────────────
+      console.log('[AUTH] setUser called, user id:', user?.id, '→', currentUser?.id, '(context: onAuthStateChange', event, ')');
+      // ──────────────────────────────────────────────────────────────────────
       setUser(currentUser);
 
       if (currentUser) {
         const userProfile = await loadProfile(currentUser.id);
         if (!isMounted) return;
+        // ── [DIAGNOSTIC] ──────────────────────────────────────────────────
+        console.log('[AUTH] setProfile called (context: onAuthStateChange', event, ')', userProfile ? 'profile found' : 'null');
+        // ──────────────────────────────────────────────────────────────────
         setProfile(userProfile);
       } else {
+        // ── [DIAGNOSTIC] ──────────────────────────────────────────────────
+        console.log('[AUTH] setProfile called (context: onAuthStateChange', event, ') → null');
+        // ──────────────────────────────────────────────────────────────────
         setProfile(null);
       }
     });
@@ -174,6 +195,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // bloqué, réseau lent, cas non anticipé), force le déblocage.
   useEffect(() => {
     const timeout = setTimeout(() => {
+      // ── [DIAGNOSTIC] ──────────────────────────────────────────────────
+      console.log('[AUTH] setIsLoading:', false, '(context: 5s safety timeout fired ⚠️)');
+      // ──────────────────────────────────────────────────────────────────
       setIsLoading(false);
     }, 5000);
     return () => clearTimeout(timeout);
@@ -185,13 +209,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
+        // ── [DIAGNOSTIC] ──────────────────────────────────────────────────
+        console.log('[AUTH] visibilitychange → visible, re-checking session...');
+        // ──────────────────────────────────────────────────────────────────
         supabase.auth
           .getSession()
           .then(({ data: { session } }) => {
+            // ── [DIAGNOSTIC] ──────────────────────────────────────────────
+            console.log('[AUTH] setUser called, user id:', user?.id, '→', session?.user?.id, '(context: visibilitychange)');
+            console.log('[AUTH] setIsLoading:', false, '(context: visibilitychange)');
+            // ──────────────────────────────────────────────────────────────
             setUser(session?.user ?? null);
             setIsLoading(false);
           })
           .catch(() => {
+            // ── [DIAGNOSTIC] ──────────────────────────────────────────────
+            console.log('[AUTH] setIsLoading:', false, '(context: visibilitychange catch)');
+            // ──────────────────────────────────────────────────────────────
             setIsLoading(false);
           });
       }

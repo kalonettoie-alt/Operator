@@ -11,6 +11,10 @@ export default function PrestataireLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // ── [DIAGNOSTIC] Server Component → log visible dans le TERMINAL, pas la console navigateur
+  console.log('[PRESTA-LAYOUT] render');
+  // ────────────────────────────────────────────────────────────────────────────
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
