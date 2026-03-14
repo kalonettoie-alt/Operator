@@ -16,6 +16,7 @@ import {
   History,
   Calculator,
   BarChart2,
+  Rss,
   Building2,
   ClipboardList,
   CalendarDays,
@@ -44,6 +45,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: "Historique",     href: "/admin/historique",        icon: History         },
     { label: "Estimations",    href: "/admin/estimations",       icon: Calculator      },
     { label: "Simulations",   href: "/admin/simulations",        icon: BarChart2       },
+    { label: "Sources iCal",  href: "/admin/reservations",       icon: Rss             },
   ],
   client: [
     { label: "Dashboard",      href: "/client",                  icon: LayoutDashboard },
