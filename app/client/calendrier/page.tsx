@@ -1,19 +1,15 @@
 "use client";
 
 // Calendrier mensuel des interventions du client — lecture seule.
-// Navigation mois précédent/suivant. Cliquer sur un jour affiche les interventions.
-// Pas de librairie externe — grille CSS native.
+// Chips de logement dans chaque cellule (style V2).
+// Filtre par logement + navigation mois précédent/suivant.
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import {
-  ChevronLeft,
-  ChevronRight,
-  CalendarDays,
-  ChevronRight as Arrow,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useInterventions } from "@/lib/hooks/useInterventions";
+import { useLogements } from "@/lib/hooks/useLogements";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,16 +17,16 @@ import { INTERVENTION_STATUSES } from "@/types/enums";
 import type { InterventionStatus } from "@/types/enums";
 import type { InterventionWithRelations } from "@/lib/hooks/useInterventions";
 
-// ─── Statut simplifié ──────────────────────────────────────────────────────────
+// ─── Couleurs des chips par statut ────────────────────────────────────────────
 
-const STATUS_DOT: Record<InterventionStatus, string> = {
-  [INTERVENTION_STATUSES.A_ATTRIBUER]: "bg-slate-400",
-  [INTERVENTION_STATUSES.ASSIGNEE]:    "bg-slate-400",
-  [INTERVENTION_STATUSES.ACCEPTEE]:    "bg-blue-400",
-  [INTERVENTION_STATUSES.REFUSEE]:     "bg-slate-400",
-  [INTERVENTION_STATUSES.EN_COURS]:    "bg-amber-400",
-  [INTERVENTION_STATUSES.TERMINEE]:    "bg-green-500",
-  [INTERVENTION_STATUSES.ANNULEE]:     "bg-slate-300",
+const CHIP_CLASS: Record<InterventionStatus, string> = {
+  [INTERVENTION_STATUSES.A_ATTRIBUER]: "bg-indigo-50 text-indigo-700",
+  [INTERVENTION_STATUSES.ASSIGNEE]:    "bg-indigo-50 text-indigo-700",
+  [INTERVENTION_STATUSES.ACCEPTEE]:    "bg-indigo-50 text-indigo-700",
+  [INTERVENTION_STATUSES.REFUSEE]:     "bg-slate-100 text-slate-400",
+  [INTERVENTION_STATUSES.EN_COURS]:    "bg-amber-50 text-amber-700",
+  [INTERVENTION_STATUSES.TERMINEE]:    "bg-green-50 text-green-700",
+  [INTERVENTION_STATUSES.ANNULEE]:     "bg-slate-100 text-slate-400 line-through",
 };
 
 const CLIENT_STATUS_LABEL: Record<InterventionStatus, string> = {
@@ -43,7 +39,7 @@ const CLIENT_STATUS_LABEL: Record<InterventionStatus, string> = {
   [INTERVENTION_STATUSES.ANNULEE]:     "Annulée",
 };
 
-const CLIENT_STATUS_CLASS: Record<InterventionStatus, string> = {
+const CLIENT_STATUS_BADGE: Record<InterventionStatus, string> = {
   [INTERVENTION_STATUSES.A_ATTRIBUER]: "bg-slate-100 text-slate-700 border-slate-200",
   [INTERVENTION_STATUSES.ASSIGNEE]:    "bg-slate-100 text-slate-700 border-slate-200",
   [INTERVENTION_STATUSES.ACCEPTEE]:    "bg-slate-100 text-slate-700 border-slate-200",
@@ -63,18 +59,17 @@ const TYPE_LABELS: Record<string, string> = {
   maintenance: "Maintenance",
 };
 
-/** Retourne le premier lundi de la grille (peut être du mois précédent) */
+const MAX_CHIPS = 2; // nombre max de chips visibles par cellule
+
 function premierLundiGrille(annee: number, mois: number): Date {
   const premierJour = new Date(annee, mois, 1);
-  // getDay() : 0=dim, 1=lun... On veut lundi=0
-  const jourSemaine = (premierJour.getDay() + 6) % 7; // 0=lun, 6=dim
+  const jourSemaine = (premierJour.getDay() + 6) % 7;
   const debut = new Date(premierJour);
   debut.setDate(1 - jourSemaine);
   return debut;
 }
 
-/** Génère les 42 cases (6 semaines × 7 jours) pour la grille */
-function genererCasesCalendrier(annee: number, mois: number): Date[] {
+function genererCases(annee: number, mois: number): Date[] {
   const debut = premierLundiGrille(annee, mois);
   return Array.from({ length: 42 }, (_, i) => {
     const d = new Date(debut);
@@ -83,7 +78,6 @@ function genererCasesCalendrier(annee: number, mois: number): Date[] {
   });
 }
 
-/** Format YYYY-MM-DD depuis un objet Date (timezone locale) */
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -91,11 +85,16 @@ function toDateStr(d: Date): string {
   return `${y}-${m}-${j}`;
 }
 
-/** Premier et dernier jour d'un mois au format YYYY-MM-DD */
-function bornesMois(annee: number, mois: number): { dateFrom: string; dateTo: string } {
-  const debut = new Date(annee, mois, 1);
-  const fin = new Date(annee, mois + 1, 0);
-  return { dateFrom: toDateStr(debut), dateTo: toDateStr(fin) };
+function bornesMois(annee: number, mois: number) {
+  return {
+    dateFrom: toDateStr(new Date(annee, mois, 1)),
+    dateTo:   toDateStr(new Date(annee, mois + 1, 0)),
+  };
+}
+
+/** Tronque un nom de logement pour l'affichage en chip */
+function truncate(name: string, max = 10): string {
+  return name.length > max ? name.slice(0, max) + "…" : name;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -105,43 +104,56 @@ export default function ClientCalendrierPage() {
 
   const today = new Date();
   const [annee, setAnnee] = useState(today.getFullYear());
-  const [mois, setMois] = useState(today.getMonth()); // 0-indexed
+  const [mois, setMois]   = useState(today.getMonth());
   const [jourSelectionne, setJourSelectionne] = useState<string | null>(null);
+  const [filtreLogement, setFiltreLogement]   = useState<string>("all");
 
   const { dateFrom, dateTo } = bornesMois(annee, mois);
 
-  const { data: interventions, isLoading } = useInterventions({
+  const { data: allInterventions, isLoading } = useInterventions({
     clientId: user?.id,
     dateFrom,
     dateTo,
   });
 
-  // Index : dateStr → liste d'interventions
+  const { data: logements } = useLogements(user?.id);
+
+  // Application du filtre logement côté client
+  const interventions = useMemo(() => {
+    if (!allInterventions) return [];
+    if (filtreLogement === "all") return allInterventions;
+    return allInterventions.filter((i) => i.logement_id === filtreLogement);
+  }, [allInterventions, filtreLogement]);
+
+  // Index dateStr → interventions
   const parJour = useMemo(() => {
     const index: Record<string, InterventionWithRelations[]> = {};
-    for (const i of interventions ?? []) {
-      const d = i.date.slice(0, 10); // YYYY-MM-DD
+    for (const i of interventions) {
+      const d = i.date.slice(0, 10);
       if (!index[d]) index[d] = [];
       index[d].push(i);
     }
     return index;
   }, [interventions]);
 
-  const cases = useMemo(() => genererCasesCalendrier(annee, mois), [annee, mois]);
-
+  const cases   = useMemo(() => genererCases(annee, mois), [annee, mois]);
   const todayStr = toDateStr(today);
 
-  // Navigation
-  function moisPrecedent() {
+  // Navigation mois
+  function precedent() {
+    setJourSelectionne(null);
     if (mois === 0) { setMois(11); setAnnee((a) => a - 1); }
     else setMois((m) => m - 1);
-    setJourSelectionne(null);
   }
-
-  function moisSuivant() {
+  function suivant() {
+    setJourSelectionne(null);
     if (mois === 11) { setMois(0); setAnnee((a) => a + 1); }
     else setMois((m) => m + 1);
+  }
+  function goToday() {
     setJourSelectionne(null);
+    setAnnee(today.getFullYear());
+    setMois(today.getMonth());
   }
 
   const titreMois = new Intl.DateTimeFormat("fr-FR", {
@@ -151,40 +163,60 @@ export default function ClientCalendrierPage() {
 
   const interventionsJour = jourSelectionne ? (parJour[jourSelectionne] ?? []) : [];
 
-  return (
-    <div className="p-4 md:p-6 space-y-4 max-w-3xl mx-auto">
+  // Résumé mois (hors annulées)
+  const nbMois       = interventions.filter((i) => i.status !== INTERVENTION_STATUSES.ANNULEE).length;
+  const nbTerminees  = interventions.filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE).length;
 
-      {/* En-tête + navigation */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 capitalize">{titreMois}</h1>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={moisPrecedent} aria-label="Mois précédent">
+  return (
+    <div className="p-4 md:p-6 space-y-4 max-w-4xl mx-auto">
+
+      {/* ── En-tête : titre + filtre + navigation ───────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+
+        {/* Titre + nav */}
+        <div className="flex items-center gap-1 flex-1">
+          <Button variant="ghost" size="icon" onClick={precedent} aria-label="Mois précédent">
             <ChevronLeft className="size-4" />
+          </Button>
+          <h1 className="text-xl font-bold text-gray-900 capitalize min-w-[180px] text-center">
+            {titreMois}
+          </h1>
+          <Button variant="ghost" size="icon" onClick={suivant} aria-label="Mois suivant">
+            <ChevronRight className="size-4" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setAnnee(today.getFullYear()); setMois(today.getMonth()); setJourSelectionne(null); }}
-            className="text-xs px-2"
+            onClick={goToday}
+            className="text-xs px-2 ml-1"
           >
             Aujourd&apos;hui
           </Button>
-          <Button variant="ghost" size="icon" onClick={moisSuivant} aria-label="Mois suivant">
-            <ChevronRight className="size-4" />
-          </Button>
+        </div>
+
+        {/* Filtre logement */}
+        <div className="sm:w-52">
+          <select
+            value={filtreLogement}
+            onChange={(e) => { setFiltreLogement(e.target.value); setJourSelectionne(null); }}
+            className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            aria-label="Filtrer par logement"
+          >
+            <option value="all">Tous les logements</option>
+            {(logements ?? []).map((l) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Grille calendrier */}
+      {/* ── Grille calendrier ───────────────────────────────────────────── */}
       <div className="rounded-xl border bg-white overflow-hidden">
 
         {/* En-têtes jours */}
-        <div className="grid grid-cols-7 border-b">
+        <div className="grid grid-cols-7 border-b bg-gray-50">
           {JOURS.map((j) => (
-            <div
-              key={j}
-              className="py-2 text-center text-xs font-semibold text-muted-foreground"
-            >
+            <div key={j} className="py-2.5 text-center text-xs font-semibold text-muted-foreground">
               {j}
             </div>
           ))}
@@ -194,28 +226,30 @@ export default function ClientCalendrierPage() {
         <div className="grid grid-cols-7">
           {isLoading
             ? Array.from({ length: 42 }).map((_, i) => (
-                <div key={i} className="min-h-[52px] border-b border-r last:border-r-0 p-1">
-                  <Skeleton className="h-5 w-5 rounded mx-auto" />
+                <div key={i} className="min-h-[80px] border-b border-r p-1.5">
+                  <Skeleton className="h-5 w-5 rounded mb-1" />
+                  <Skeleton className="h-4 w-14 rounded" />
                 </div>
               ))
             : cases.map((date) => {
                 const dateStr = toDateStr(date);
                 const estMoisCourant = date.getMonth() === mois;
-                const estAujourdhui = dateStr === todayStr;
+                const estAujourdhui  = dateStr === todayStr;
                 const estSelectionne = dateStr === jourSelectionne;
-                const interventionsDuJour = parJour[dateStr] ?? [];
-                const aDesInterventions = interventionsDuJour.length > 0;
+                const items          = parJour[dateStr] ?? [];
+                const visible        = items.slice(0, MAX_CHIPS);
+                const surplus        = items.length - MAX_CHIPS;
 
                 return (
                   <button
                     key={dateStr}
                     onClick={() => setJourSelectionne(estSelectionne ? null : dateStr)}
                     className={[
-                      "min-h-[52px] border-b border-r last:border-r-0 p-1.5 text-left transition-colors",
-                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                      "min-h-[80px] border-b border-r last:border-r-0 p-1.5 text-left align-top transition-colors",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400",
                       estSelectionne
-                        ? "bg-blue-50"
-                        : aDesInterventions
+                        ? "bg-blue-50 ring-2 ring-inset ring-blue-400"
+                        : items.length > 0
                         ? "hover:bg-gray-50 cursor-pointer"
                         : "cursor-default",
                     ].join(" ")}
@@ -223,7 +257,7 @@ export default function ClientCalendrierPage() {
                     {/* Numéro du jour */}
                     <span
                       className={[
-                        "flex items-center justify-center size-6 rounded-full text-xs font-medium mx-auto",
+                        "inline-flex items-center justify-center size-6 rounded-full text-xs font-semibold mb-1",
                         estAujourdhui
                           ? "bg-blue-600 text-white"
                           : estMoisCourant
@@ -234,39 +268,52 @@ export default function ClientCalendrierPage() {
                       {date.getDate()}
                     </span>
 
-                    {/* Points d'intervention */}
-                    {aDesInterventions && (
-                      <div className="flex flex-wrap justify-center gap-0.5 mt-1">
-                        {interventionsDuJour.slice(0, 3).map((i) => (
-                          <span
-                            key={i.id}
-                            className={`size-1.5 rounded-full ${STATUS_DOT[i.status as InterventionStatus] ?? "bg-gray-400"}`}
-                          />
-                        ))}
-                        {interventionsDuJour.length > 3 && (
-                          <span className="text-[9px] text-muted-foreground leading-none">
-                            +{interventionsDuJour.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {/* Chips logement */}
+                    <div className="space-y-0.5">
+                      {visible.map((i) => (
+                        <div
+                          key={i.id}
+                          className={[
+                            "rounded px-1 py-0.5 text-[10px] font-medium leading-tight truncate w-full",
+                            CHIP_CLASS[i.status as InterventionStatus] ?? "bg-indigo-50 text-indigo-700",
+                          ].join(" ")}
+                          title={i.logement?.name ?? "Logement inconnu"}
+                        >
+                          {truncate(i.logement?.name ?? "?", 11)}
+                        </div>
+                      ))}
+                      {surplus > 0 && (
+                        <p className="text-[10px] text-muted-foreground pl-0.5">
+                          +{surplus} autre{surplus > 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
                   </button>
                 );
               })}
         </div>
       </div>
 
-      {/* Légende */}
+      {/* ── Légende ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-slate-400" />À venir</span>
-        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-400" />En cours</span>
-        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-green-500" />Terminée</span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block size-3 rounded bg-indigo-50 border border-indigo-200" />
+          À venir
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block size-3 rounded bg-amber-50 border border-amber-200" />
+          En cours
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block size-3 rounded bg-green-50 border border-green-200" />
+          Terminée
+        </span>
       </div>
 
-      {/* Panneau du jour sélectionné */}
+      {/* ── Panneau jour sélectionné ─────────────────────────────────────── */}
       {jourSelectionne && (
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">
+          <h2 className="text-sm font-semibold text-gray-700 capitalize">
             {new Intl.DateTimeFormat("fr-FR", {
               weekday: "long",
               day: "numeric",
@@ -300,11 +347,11 @@ export default function ClientCalendrierPage() {
                   <div className="ml-3 flex items-center gap-2 shrink-0">
                     <Badge
                       variant="outline"
-                      className={`text-xs border ${CLIENT_STATUS_CLASS[intervention.status as InterventionStatus] ?? ""}`}
+                      className={`text-xs border ${CLIENT_STATUS_BADGE[intervention.status as InterventionStatus] ?? ""}`}
                     >
                       {CLIENT_STATUS_LABEL[intervention.status as InterventionStatus] ?? intervention.status}
                     </Badge>
-                    <Arrow className="size-3.5 text-muted-foreground group-hover:text-blue-500 transition-colors" />
+                    <ChevronRight className="size-3.5 text-muted-foreground group-hover:text-blue-500 transition-colors" />
                   </div>
                 </Link>
               ))}
@@ -313,18 +360,14 @@ export default function ClientCalendrierPage() {
         </div>
       )}
 
-      {/* Résumé du mois */}
-      {!isLoading && (interventions?.length ?? 0) > 0 && !jourSelectionne && (
-        <div className="rounded-xl bg-gray-50 border p-3 text-sm text-muted-foreground">
-          <span className="font-medium text-gray-700">
-            {interventions?.filter((i) => i.status !== INTERVENTION_STATUSES.ANNULEE).length}
-          </span>{" "}
-          intervention{(interventions?.filter((i) => i.status !== INTERVENTION_STATUSES.ANNULEE).length ?? 0) > 1 ? "s" : ""} ce mois
+      {/* ── Résumé du mois ───────────────────────────────────────────────── */}
+      {!isLoading && nbMois > 0 && !jourSelectionne && (
+        <div className="rounded-xl bg-gray-50 border px-4 py-3 text-sm text-muted-foreground">
+          <span className="font-medium text-gray-700">{nbMois}</span>{" "}
+          intervention{nbMois > 1 ? "s" : ""} ce mois
           {" · "}
-          <span className="font-medium text-green-700">
-            {interventions?.filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE).length}
-          </span>{" "}
-          terminée{(interventions?.filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE).length ?? 0) > 1 ? "s" : ""}
+          <span className="font-medium text-green-700">{nbTerminees}</span>{" "}
+          terminée{nbTerminees > 1 ? "s" : ""}
         </div>
       )}
     </div>
