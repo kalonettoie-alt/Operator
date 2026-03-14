@@ -7,10 +7,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  // ── [DIAGNOSTIC] Client Component → visible dans la console navigateur
-  console.log('[QUERY-CLIENT] created/rendered');
-  // ────────────────────────────────────────────────────────────────────────────
-
   // useState garantit qu'un seul QueryClient est créé par session navigateur
   const [queryClient] = useState(
     () =>

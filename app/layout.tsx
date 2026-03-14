@@ -15,10 +15,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // ── [DIAGNOSTIC] Server Component → log visible dans le TERMINAL, pas la console navigateur
-  console.log('[LAYOUT] render');
-  // ────────────────────────────────────────────────────────────────────────────
-
   return (
     <html lang="fr" suppressHydrationWarning>
       <body className="antialiased">
