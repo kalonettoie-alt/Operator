@@ -3,16 +3,22 @@
 // Calendrier admin — vue de toutes les interventions avec filtres.
 // Utilise FullCalendar v6 (daygrid + timegrid + interaction).
 // Vues : mois, semaine, jour. Filtres : logement, client, prestataire, statut.
-// Clic sur un événement → navigation vers /admin/interventions/[id].
+// Clic sur un jour → panneau latéral avec la liste des interventions du jour.
+// Clic sur une intervention → navigation vers /admin/interventions/[id].
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import frLocale from "@fullcalendar/core/locales/fr";
-import type { DatesSetArg, EventClickArg, EventContentArg } from "@fullcalendar/core";
+import type {
+  DatesSetArg,
+  EventClickArg,
+  EventContentArg,
+} from "@fullcalendar/core";
+import type { DateClickArg } from "@fullcalendar/interaction";
 
 import { useInterventions } from "@/lib/hooks/useInterventions";
 import { useLogements } from "@/lib/hooks/useLogements";
@@ -24,13 +30,13 @@ import type { InterventionWithRelations } from "@/lib/hooks/useInterventions";
 // ─── Couleurs par statut ───────────────────────────────────────────────────────
 
 const STATUS_COLOR: Record<InterventionStatus, string> = {
-  [INTERVENTION_STATUSES.A_ATTRIBUER]: "#94a3b8", // slate-400
-  [INTERVENTION_STATUSES.ASSIGNEE]:    "#3b82f6", // blue-500
-  [INTERVENTION_STATUSES.ACCEPTEE]:    "#6366f1", // indigo-500
-  [INTERVENTION_STATUSES.REFUSEE]:     "#f87171", // red-400
-  [INTERVENTION_STATUSES.EN_COURS]:    "#f59e0b", // amber-500
-  [INTERVENTION_STATUSES.TERMINEE]:    "#22c55e", // green-500
-  [INTERVENTION_STATUSES.ANNULEE]:     "#cbd5e1", // slate-300
+  [INTERVENTION_STATUSES.A_ATTRIBUER]: "#94a3b8",
+  [INTERVENTION_STATUSES.ASSIGNEE]:    "#3b82f6",
+  [INTERVENTION_STATUSES.ACCEPTEE]:    "#6366f1",
+  [INTERVENTION_STATUSES.REFUSEE]:     "#f87171",
+  [INTERVENTION_STATUSES.EN_COURS]:    "#f59e0b",
+  [INTERVENTION_STATUSES.TERMINEE]:    "#22c55e",
+  [INTERVENTION_STATUSES.ANNULEE]:     "#cbd5e1",
 };
 
 const STATUS_LABEL: Record<InterventionStatus, string> = {
@@ -46,8 +52,8 @@ const STATUS_LABEL: Record<InterventionStatus, string> = {
 const ALL_STATUSES = Object.entries(STATUS_LABEL) as [InterventionStatus, string][];
 
 const TYPE_LABELS: Record<string, string> = {
-  menage: "Ménage",
-  etat_lieux: "État des lieux",
+  menage:      "Ménage",
+  etat_lieux:  "État des lieux",
   maintenance: "Maintenance",
 };
 
@@ -57,7 +63,18 @@ function toDateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Contenu personnalisé d'un événement FullCalendar */
+/** Formate "2026-03-08" → "Dimanche 8 mars" */
+function formatDayTitle(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00"); // évite le décalage UTC
+  return new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day:     "numeric",
+    month:   "long",
+  }).format(d);
+}
+
+// ─── Contenu personnalisé d'un événement FullCalendar ─────────────────────────
+
 function EventContent({ eventInfo }: { eventInfo: EventContentArg }) {
   const { title, extendedProps } = eventInfo.event;
   const type = extendedProps.type as string;
@@ -73,7 +90,144 @@ function EventContent({ eventInfo }: { eventInfo: EventContentArg }) {
   );
 }
 
-// ─── Composant filtre select ──────────────────────────────────────────────────
+// ─── Carte d'une intervention dans le panneau jour ────────────────────────────
+
+function InterventionCard({
+  intervention,
+  onClick,
+}: {
+  intervention: InterventionWithRelations;
+  onClick: () => void;
+}) {
+  const status  = intervention.status as InterventionStatus;
+  const color   = STATUS_COLOR[status] ?? "#94a3b8";
+  const label   = STATUS_LABEL[status] ?? status;
+  const type    = TYPE_LABELS[intervention.type] ?? intervention.type;
+  const city    = intervention.logement?.city;
+  const presta  = intervention.prestataire?.full_name;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left bg-white border rounded-xl p-3.5 hover:border-blue-200 hover:bg-blue-50/40 transition-colors shadow-sm group"
+    >
+      {/* Nom du logement */}
+      <p className="font-semibold text-sm text-gray-900 group-hover:text-blue-700 truncate">
+        {intervention.logement?.name ?? "Logement inconnu"}
+      </p>
+
+      {/* Badge statut */}
+      <div className="flex items-center gap-1.5 mt-1.5">
+        <span
+          className="size-2 rounded-full shrink-0"
+          style={{ backgroundColor: color }}
+        />
+        <span className="text-xs font-medium" style={{ color }}>
+          {label}
+        </span>
+      </div>
+
+      {/* Type d'intervention */}
+      <p className="text-xs text-amber-600 font-medium mt-1.5 flex items-center gap-1">
+        <span>⚡</span>
+        {type}
+      </p>
+
+      {/* Ville */}
+      {city && (
+        <p className="text-xs text-gray-500 mt-1">{city}</p>
+      )}
+
+      {/* Prestataire assigné */}
+      {presta ? (
+        <p className="text-xs text-gray-600 mt-1 font-medium">{presta}</p>
+      ) : (
+        <p className="text-xs text-gray-400 mt-1 italic">Aucun prestataire assigné</p>
+      )}
+    </button>
+  );
+}
+
+// ─── Panneau jour ─────────────────────────────────────────────────────────────
+
+function DayPanel({
+  dateStr,
+  interventions,
+  onClose,
+  onAdd,
+  onSelectIntervention,
+}: {
+  dateStr: string;
+  interventions: InterventionWithRelations[];
+  onClose: () => void;
+  onAdd: () => void;
+  onSelectIntervention: (id: string) => void;
+}) {
+  const title = formatDayTitle(dateStr);
+  // Capitalise la première lettre
+  const titleCapitalized = title.charAt(0).toUpperCase() + title.slice(1);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* ── En-tête ────────────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between gap-2 p-4 border-b">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-lg">📅</span>
+          <h2 className="font-bold text-gray-900 text-sm leading-tight">
+            {titleCapitalized}
+          </h2>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={onAdd}
+            className="flex items-center gap-1 text-xs font-semibold text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg px-2.5 py-1.5 transition-colors"
+          >
+            <span className="text-sm leading-none">+</span>
+            Ajouter
+          </button>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+            title="Fermer"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* ── Liste des interventions ────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {interventions.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-3xl mb-2">📭</p>
+            <p className="text-sm text-gray-500">Aucune intervention ce jour</p>
+            <button
+              onClick={onAdd}
+              className="mt-3 text-xs text-blue-600 hover:underline"
+            >
+              + Créer une intervention
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-gray-400 font-medium px-1">
+              {interventions.length} intervention{interventions.length > 1 ? "s" : ""}
+            </p>
+            {interventions.map((i) => (
+              <InterventionCard
+                key={i.id}
+                intervention={i}
+                onClick={() => onSelectIntervention(i.id)}
+              />
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Filtre select ────────────────────────────────────────────────────────────
 
 function FilterSelect({
   id,
@@ -105,17 +259,21 @@ function FilterSelect({
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function AdminCalendrierPage() {
   const router = useRouter();
 
   // ── Plage de dates visible (mise à jour par FullCalendar) ─────────────────
-  const initFrom = toDateStr(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const initTo   = toDateStr(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0));
+  const today = new Date();
+  const initFrom = toDateStr(new Date(today.getFullYear(), today.getMonth(), 1));
+  const initTo   = toDateStr(new Date(today.getFullYear(), today.getMonth() + 1, 0));
 
   const [dateFrom, setDateFrom] = useState(initFrom);
   const [dateTo,   setDateTo]   = useState(initTo);
+
+  // ── Jour sélectionné (panneau latéral) ───────────────────────────────────
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // ── Filtres ───────────────────────────────────────────────────────────────
   const [filtreLogement,    setFiltreLogement]    = useState("all");
@@ -140,7 +298,13 @@ export default function AdminCalendrierPage() {
     });
   }, [allInterventions, filtreLogement, filtreClient, filtrePrestataire, filtreStatut]);
 
-  // ── Conversion en événements FullCalendar ─────────────────────────────────
+  // ── Interventions du jour sélectionné ────────────────────────────────────
+  const dayInterventions = useMemo<InterventionWithRelations[]>(() => {
+    if (!selectedDate) return [];
+    return filtered.filter((i) => i.date === selectedDate);
+  }, [filtered, selectedDate]);
+
+  // ── Événements FullCalendar ───────────────────────────────────────────────
   const events = useMemo(() =>
     filtered.map((i) => ({
       id:              i.id,
@@ -152,8 +316,6 @@ export default function AdminCalendrierPage() {
       extendedProps:   {
         interventionId: i.id,
         type:           i.type,
-        client:         i.client?.full_name,
-        prestataire:    i.prestataire?.full_name,
         status:         i.status,
       },
     }))
@@ -161,20 +323,24 @@ export default function AdminCalendrierPage() {
 
   // ── Handlers FullCalendar ─────────────────────────────────────────────────
   const handleDatesSet = useCallback((arg: DatesSetArg) => {
-    // arg.start / arg.end donnent la plage exacte de la vue courante
     setDateFrom(toDateStr(arg.start));
-    // arg.end est exclusif (lendemain du dernier jour visible)
     const endInclusive = new Date(arg.end);
     endInclusive.setDate(endInclusive.getDate() - 1);
     setDateTo(toDateStr(endInclusive));
   }, []);
 
+  // Clic sur un événement → ouvre le panneau du jour correspondant
   const handleEventClick = useCallback((info: EventClickArg) => {
-    const id = info.event.extendedProps.interventionId as string;
-    router.push(`/admin/interventions/${id}`);
-  }, [router]);
+    const dateStr = info.event.startStr.slice(0, 10);
+    setSelectedDate(dateStr);
+  }, []);
 
-  // ── Réinitialiser les filtres ──────────────────────────────────────────────
+  // Clic sur une cellule jour vide → ouvre aussi le panneau
+  const handleDateClick = useCallback((info: DateClickArg) => {
+    setSelectedDate(info.dateStr);
+  }, []);
+
+  // ── Réinitialiser les filtres ─────────────────────────────────────────────
   function resetFiltres() {
     setFiltreLogement("all");
     setFiltreClient("all");
@@ -213,48 +379,28 @@ export default function AdminCalendrierPage() {
 
       {/* ── Filtres ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white rounded-xl border p-3 shadow-sm">
-        <FilterSelect
-          id="filtre-logement"
-          label="Logement"
-          value={filtreLogement}
-          onChange={setFiltreLogement}
-        >
+        <FilterSelect id="filtre-logement" label="Logement" value={filtreLogement} onChange={setFiltreLogement}>
           <option value="all">Tous les logements</option>
           {(logements ?? []).map((l) => (
             <option key={l.id} value={l.id}>{l.name}</option>
           ))}
         </FilterSelect>
 
-        <FilterSelect
-          id="filtre-client"
-          label="Client"
-          value={filtreClient}
-          onChange={setFiltreClient}
-        >
+        <FilterSelect id="filtre-client" label="Client" value={filtreClient} onChange={setFiltreClient}>
           <option value="all">Tous les clients</option>
           {(clients ?? []).map((c) => (
             <option key={c.id} value={c.id}>{c.full_name}</option>
           ))}
         </FilterSelect>
 
-        <FilterSelect
-          id="filtre-prestataire"
-          label="Prestataire"
-          value={filtrePrestataire}
-          onChange={setFiltrePrestataire}
-        >
+        <FilterSelect id="filtre-prestataire" label="Prestataire" value={filtrePrestataire} onChange={setFiltrePrestataire}>
           <option value="all">Tous les prestataires</option>
           {(prestataires ?? []).map((p) => (
             <option key={p.id} value={p.id}>{p.full_name}</option>
           ))}
         </FilterSelect>
 
-        <FilterSelect
-          id="filtre-statut"
-          label="Statut"
-          value={filtreStatut}
-          onChange={setFiltreStatut}
-        >
+        <FilterSelect id="filtre-statut" label="Statut" value={filtreStatut} onChange={setFiltreStatut}>
           <option value="all">Tous les statuts</option>
           {ALL_STATUSES.map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
@@ -262,41 +408,73 @@ export default function AdminCalendrierPage() {
         </FilterSelect>
       </div>
 
-      {/* ── Calendrier ─────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden fc-admin">
-        <FullCalendar
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          locale={frLocale}
-          initialView="dayGridMonth"
-          headerToolbar={{
-            left:   "prev,next today",
-            center: "title",
-            right:  "dayGridMonth,timeGridWeek,timeGridDay",
-          }}
-          buttonText={{
-            today:        "Aujourd'hui",
-            month:        "Mois",
-            week:         "Semaine",
-            day:          "Jour",
-          }}
-          events={events}
-          datesSet={handleDatesSet}
-          eventClick={handleEventClick}
-          eventContent={(info) => <EventContent eventInfo={info} />}
-          eventDisplay="block"
-          dayMaxEvents={4}
-          moreLinkText={(n) => `+${n} autre${n > 1 ? "s" : ""}`}
-          nowIndicator
-          height="auto"
-          aspectRatio={1.8}
-          stickyHeaderDates
-          // Vue semaine/jour : heures de travail en surbrillance
-          businessHours={{ daysOfWeek: [1, 2, 3, 4, 5, 6], startTime: "07:00", endTime: "21:00" }}
-          slotMinTime="06:00:00"
-          slotMaxTime="22:00:00"
-          allDayText="Toute la journée"
-          eventTimeFormat={{ hour: "2-digit", minute: "2-digit", meridiem: false }}
-        />
+      {/* ── Calendrier + panneau latéral ────────────────────────────────── */}
+      <div className={[
+        "flex gap-4 items-start",
+        selectedDate ? "flex-col md:flex-row" : "",
+      ].join(" ")}>
+
+        {/* Calendrier */}
+        <div className={[
+          "bg-white rounded-xl border shadow-sm overflow-hidden fc-admin min-w-0",
+          selectedDate ? "w-full md:flex-1" : "w-full",
+        ].join(" ")}>
+          <FullCalendar
+            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+            locale={frLocale}
+            initialView="dayGridMonth"
+            headerToolbar={{
+              left:   "prev,next today",
+              center: "title",
+              right:  "dayGridMonth,timeGridWeek,timeGridDay",
+            }}
+            buttonText={{
+              today:   "Aujourd'hui",
+              month:   "Mois",
+              week:    "Semaine",
+              day:     "Jour",
+            }}
+            events={events}
+            datesSet={handleDatesSet}
+            eventClick={handleEventClick}
+            dateClick={handleDateClick}
+            eventContent={(info) => <EventContent eventInfo={info} />}
+            eventDisplay="block"
+            dayMaxEvents={3}
+            moreLinkText={(n) => `+${n} autre${n > 1 ? "s" : ""}`}
+            nowIndicator
+            height="auto"
+            stickyHeaderDates
+            businessHours={{ daysOfWeek: [1, 2, 3, 4, 5, 6], startTime: "07:00", endTime: "21:00" }}
+            slotMinTime="06:00:00"
+            slotMaxTime="22:00:00"
+            allDayText="Toute la journée"
+            eventTimeFormat={{ hour: "2-digit", minute: "2-digit", meridiem: false }}
+            // Highlight le jour sélectionné
+            dayCellClassNames={(arg) =>
+              arg.date.toISOString().slice(0, 10) === selectedDate
+                ? ["fc-day-selected"]
+                : []
+            }
+          />
+        </div>
+
+        {/* Panneau latéral — visible uniquement si un jour est sélectionné */}
+        {selectedDate && (
+          <div className="w-full md:w-80 lg:w-96 shrink-0 bg-white rounded-xl border shadow-sm overflow-hidden md:sticky md:top-20 md:max-h-[calc(100vh-6rem)]">
+            <DayPanel
+              dateStr={selectedDate}
+              interventions={dayInterventions}
+              onClose={() => setSelectedDate(null)}
+              onAdd={() =>
+                router.push(`/admin/interventions/nouvelle?date=${selectedDate}`)
+              }
+              onSelectIntervention={(id) =>
+                router.push(`/admin/interventions/${id}`)
+              }
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Légende statuts ─────────────────────────────────────────────── */}
@@ -311,16 +489,13 @@ export default function AdminCalendrierPage() {
             ].join(" ")}
             title={`Filtrer : ${label}`}
           >
-            <span
-              className="size-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: STATUS_COLOR[status] }}
-            />
+            <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_COLOR[status] }} />
             {label}
           </button>
         ))}
       </div>
 
-      {/* ── Styles FullCalendar overrides ──────────────────────────────── */}
+      {/* ── Styles FullCalendar ──────────────────────────────────────────── */}
       <style>{`
         .fc-admin .fc-toolbar-title { font-size: 1.1rem; font-weight: 700; }
         .fc-admin .fc-button {
@@ -349,6 +524,7 @@ export default function AdminCalendrierPage() {
           background: #2563eb; color: white; border-radius: 9999px;
           width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
         }
+        .fc-admin .fc-day-selected { background: #f0fdf4 !important; outline: 2px solid #22c55e; outline-offset: -2px; }
         .fc-admin .fc-event { border-radius: 4px !important; cursor: pointer; }
         .fc-admin .fc-event:hover { filter: brightness(0.93); }
         .fc-admin .fc-more-link { font-size: 0.75rem; color: #6366f1; font-weight: 600; }
@@ -357,6 +533,8 @@ export default function AdminCalendrierPage() {
         .fc-admin .fc-now-indicator-line { border-color: #ef4444; }
         .fc-admin table { border-collapse: collapse; }
         .fc-admin .fc-scrollgrid { border-radius: 0; border: none; }
+        .fc-admin .fc-daygrid-day { cursor: pointer; transition: background 0.1s; }
+        .fc-admin .fc-daygrid-day:hover { background: #f8fafc !important; }
       `}</style>
     </div>
   );
