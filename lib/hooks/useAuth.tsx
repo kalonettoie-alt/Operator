@@ -130,12 +130,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AUTH-EVENT]', event, 'user changed:', session?.user?.id !== userRef.current?.id);
       if (event === "INITIAL_SESSION") return; // géré par getSession() plus haut
 
-      const currentUser = session?.user ?? null;
+      const newUserId = session?.user?.id;
+      const currentUserId = userRef.current?.id;
 
-      // Évite le re-render si le user n'a pas changé
-      if (currentUser?.id !== userRef.current?.id) {
-        setUser(currentUser);
+      // Si c'est le même user (ex: SIGNED_IN au retour d'onglet), on ne fait RIEN.
+      // Zéro setState — évite les re-renders en cascade inutiles.
+      if (newUserId === currentUserId && event !== "SIGNED_OUT") {
+        console.log('[AUTH] same user, skipping all setState');
+        return;
       }
+
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
 
       if (currentUser) {
         const userProfile = await loadProfile(currentUser.id);
