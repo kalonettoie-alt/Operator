@@ -161,39 +161,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timeout);
   }, []);
 
-  // Quand l'utilisateur revient sur l'onglet, vérifie si la session a changé.
-  //
-  // IMPORTANT : on compare les user ids via userRef (pas user directement)
-  // pour éviter le bug de stale closure — le callback capture la valeur
-  // initiale de user (null) si on lit user directement.
-  //
-  // On ne touche PAS à setIsLoading ici : Supabase gère le token refresh
-  // automatiquement via onAuthStateChange. Un appel concurrent à getSession()
-  // provoquerait deux refreshes simultanés → deadlock du client Supabase
-  // → toutes les requêtes bloquées indéfiniment.
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        supabase.auth
-          .getSession()
-          .then(({ data: { session } }) => {
-            const newUserId = session?.user?.id;
-            const currentUserId = userRef.current?.id;
-
-            // Mettre à jour uniquement si la session a réellement changé
-            if (newUserId !== currentUserId) {
-              setUser(session?.user ?? null);
-            }
-          })
-          .catch(() => {
-            // Silencieux : le refresh sera géré par onAuthStateChange
-          });
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
-
   // Déconnexion + redirection
   const signOut = async () => {
     try {

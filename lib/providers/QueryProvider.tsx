@@ -17,10 +17,10 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
             refetchOnWindowFocus: false,
             // Retry 2 fois en cas d'erreur réseau (couvre les timeouts auth transitoires)
             retry: 2,
-            // Délai exponentiel entre les retries : 1s, 2s
-            retryDelay: (attempt) => attempt * 1000,
-            // Cache de 5 minutes par défaut
-            staleTime: 5 * 60 * 1000,
+            // 1 seconde entre chaque retry
+            retryDelay: 1000,
+            // Cache de 60 secondes par défaut
+            staleTime: 60_000,
           },
         },
       })
