@@ -5,6 +5,9 @@ import {
   calculateMonthlyProviderCost,
   calculateMonthlyBlanchisserie,
   calculateMonthlyGain,
+  countWorkingDaysInMonth,
+  simulateLogementRevenue,
+  simulateCroissance,
 } from "../finance";
 
 // ─── calculateInterventionGain ────────────────────────────────────────────────
@@ -272,5 +275,154 @@ describe("calculateMonthlyGain", () => {
         { prix_client_ttc: 100, prix_prestataire_ht: 60, blanchisserie_incluse: false, prix_blanchisserie: null, status: "assignee" },
       ])
     ).toBe(0);
+  });
+});
+
+// ─── countWorkingDaysInMonth ──────────────────────────────────────────────────
+
+describe("countWorkingDaysInMonth", () => {
+  it("calcule les jours ouvrés (lun-sam) de mars 2026 — 26 jours", () => {
+    // Mars 2026 : 31 jours, commence un dimanche → 5 dimanches → 31 - 5 = 26
+    expect(countWorkingDaysInMonth(2026, 3)).toBe(26);
+  });
+
+  it("calcule les jours ouvrés de février 2026 — 24 jours", () => {
+    // Fév 2026 : 28 jours, commence un dimanche → 4 dimanches → 28 - 4 = 24
+    expect(countWorkingDaysInMonth(2026, 2)).toBe(24);
+  });
+
+  it("calcule les jours ouvrés de janvier 2026 — 27 jours", () => {
+    // Jan 2026 : 31 jours, commence un jeudi → dimanches les 4,11,18,25 → 31 - 4 = 27
+    expect(countWorkingDaysInMonth(2026, 1)).toBe(27);
+  });
+
+  it("retourne un nombre positif pour n'importe quel mois valide", () => {
+    for (let m = 1; m <= 12; m++) {
+      expect(countWorkingDaysInMonth(2026, m)).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ─── simulateLogementRevenue ──────────────────────────────────────────────────
+
+describe("simulateLogementRevenue", () => {
+  it("calcule les revenus mensuels sans blanchisserie", () => {
+    const result = simulateLogementRevenue({
+      prix_client_ttc:       80,
+      prix_prestataire_ht:   50,
+      nb_interventions_mois:  4,
+      blanchisserie_incluse: false,
+      prix_blanchisserie:     0,
+    });
+    // revenuParIntervention = 80, gainParIntervention = 30
+    expect(result.revenuMensuel).toBe(320);          // 80 × 4
+    expect(result.coutMensuel).toBe(200);            // 50 × 4
+    expect(result.gainMensuel).toBe(120);            // 30 × 4
+    expect(result.gainAnnuel).toBe(1440);            // 120 × 12
+    expect(result.margePercent).toBeCloseTo(37.5, 1); // 120 / 320
+  });
+
+  it("calcule les revenus mensuels avec blanchisserie", () => {
+    const result = simulateLogementRevenue({
+      prix_client_ttc:       100,
+      prix_prestataire_ht:    60,
+      nb_interventions_mois:   4,
+      blanchisserie_incluse:  true,
+      prix_blanchisserie:     15,
+    });
+    // gainParIntervention = 100 + 15 - 60 = 55, revenuParIntervention = 115
+    expect(result.revenuMensuel).toBe(460);           // 115 × 4
+    expect(result.coutMensuel).toBe(240);             // 60 × 4
+    expect(result.gainMensuel).toBe(220);             // 55 × 4
+    expect(result.gainAnnuel).toBe(2640);             // 220 × 12
+    expect(result.margePercent).toBeCloseTo(47.83, 1); // 220 / 460
+  });
+
+  it("retourne 0 pour 0 interventions par mois", () => {
+    const result = simulateLogementRevenue({
+      prix_client_ttc:       80,
+      prix_prestataire_ht:   50,
+      nb_interventions_mois:  0,
+      blanchisserie_incluse: false,
+      prix_blanchisserie:     0,
+    });
+    expect(result.revenuMensuel).toBe(0);
+    expect(result.gainMensuel).toBe(0);
+    expect(result.gainAnnuel).toBe(0);
+    expect(result.margePercent).toBe(0);
+  });
+
+  it("gère une marge négative (presta > client)", () => {
+    const result = simulateLogementRevenue({
+      prix_client_ttc:       40,
+      prix_prestataire_ht:   50,
+      nb_interventions_mois:  3,
+      blanchisserie_incluse: false,
+      prix_blanchisserie:     0,
+    });
+    expect(result.gainMensuel).toBe(-30);           // -10 × 3
+    expect(result.margePercent).toBeCloseTo(-25, 1); // -30 / 120
+  });
+});
+
+// ─── simulateCroissance ───────────────────────────────────────────────────────
+
+describe("simulateCroissance", () => {
+  it("projette CA, coût, gain et nb prestataires pour un parc donné", () => {
+    const result = simulateCroissance({
+      nbLogements:                          10,
+      interventionsMoyennesParLogementMois:  4,
+      prixMoyenClient:                      100,
+      prixMoyenPrestataire:                  60,
+      maxDailyInterventionsParPresta:         3,
+    });
+    // totalInterventions = 10 × 4 = 40
+    expect(result.totalInterventionsMois).toBe(40);
+    expect(result.caMensuel).toBe(4000);    // 40 × 100
+    expect(result.coutMensuel).toBe(2400);  // 40 × 60
+    expect(result.gainMensuel).toBe(1600);  // 4000 - 2400
+    expect(result.caAnnuel).toBe(48000);    // 4000 × 12
+    expect(result.gainAnnuel).toBe(19200);  // 1600 × 12
+    expect(result.margePercent).toBe(40);   // 1600 / 4000
+    // capacite = 3 × 26 = 78 → ceil(40 / 78) = 1
+    expect(result.nbPrestatairesNecessaires).toBe(1);
+  });
+
+  it("calcule le bon nombre de prestataires quand la charge dépasse 1", () => {
+    const result = simulateCroissance({
+      nbLogements:                          50,
+      interventionsMoyennesParLogementMois:  4,
+      prixMoyenClient:                      100,
+      prixMoyenPrestataire:                  60,
+      maxDailyInterventionsParPresta:         3,
+    });
+    // totalInterventions = 200, capacite = 78 → ceil(200 / 78) = 3
+    expect(result.totalInterventionsMois).toBe(200);
+    expect(result.nbPrestatairesNecessaires).toBe(3);
+  });
+
+  it("retourne 0 prestataires si maxDailyInterventions = 0 (division par zéro)", () => {
+    const result = simulateCroissance({
+      nbLogements:                          10,
+      interventionsMoyennesParLogementMois:  4,
+      prixMoyenClient:                      100,
+      prixMoyenPrestataire:                  60,
+      maxDailyInterventionsParPresta:         0,
+    });
+    expect(result.nbPrestatairesNecessaires).toBe(0);
+  });
+
+  it("retourne tout à 0 pour 0 logements", () => {
+    const result = simulateCroissance({
+      nbLogements:                           0,
+      interventionsMoyennesParLogementMois:   4,
+      prixMoyenClient:                       100,
+      prixMoyenPrestataire:                   60,
+      maxDailyInterventionsParPresta:          3,
+    });
+    expect(result.totalInterventionsMois).toBe(0);
+    expect(result.caMensuel).toBe(0);
+    expect(result.nbPrestatairesNecessaires).toBe(0);
+    expect(result.margePercent).toBe(0);
   });
 });
