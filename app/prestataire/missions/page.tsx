@@ -118,13 +118,13 @@ export default function MissionsPrestatairePage() {
       {/* En-tête */}
       <div>
         <h1 className="text-2xl font-bold">Mes missions</h1>
-        <p className="text-muted-foreground text-sm mt-1">
+        <div className="text-muted-foreground text-sm mt-1">
           {loading ? (
             <Skeleton className="inline-block h-3.5 w-28" />
           ) : (
             `${missions?.length ?? 0} mission(s) trouvée(s)`
           )}
-        </p>
+        </div>
       </div>
 
       {/* Erreur */}
