@@ -461,7 +461,7 @@ export default function AdminCalendrierPage() {
 
         {/* Panneau latéral — visible uniquement si un jour est sélectionné */}
         {selectedDate && (
-          <div className="w-full md:w-80 lg:w-96 shrink-0 bg-white rounded-xl border shadow-sm overflow-hidden md:sticky md:top-20 md:max-h-[calc(100vh-6rem)]">
+          <div className="w-full md:w-80 lg:w-96 shrink-0 bg-white rounded-xl border shadow-sm overflow-hidden md:sticky md:top-20 md:h-[calc(100vh-6rem)] flex flex-col">
             <DayPanel
               dateStr={selectedDate}
               interventions={dayInterventions}
