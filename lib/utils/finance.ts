@@ -77,6 +77,25 @@ export function calculateMonthlyBlanchisserie(
     .reduce((sum, i) => sum + (i.prix_blanchisserie ?? 0), 0);
 }
 
+// ─── Calcul de la facture estimée côté client (mois) ─────────────────────────
+
+/**
+ * Ce que le client doit payer ce mois-ci.
+ * = somme de (prix_client_ttc + prix_blanchisserie si incluse) pour chaque intervention terminée.
+ * Utilisé dans le dashboard client — différent du calculateMonthlyRevenue admin.
+ */
+export function calculateClientMonthlyBilling(
+  interventions: InterventionForFinance[]
+): number {
+  return interventions
+    .filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE)
+    .reduce((sum, i) => {
+      const menage = i.prix_client_ttc ?? 0;
+      const blanchisserie = i.blanchisserie_incluse ? (i.prix_blanchisserie ?? 0) : 0;
+      return sum + menage + blanchisserie;
+    }, 0);
+}
+
 // ─── Calcul du gain mensuel total ────────────────────────────────────────────
 
 /**
