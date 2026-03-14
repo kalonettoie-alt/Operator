@@ -6,11 +6,36 @@
 
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useClientDashboard, type ClientInterventionRow } from "@/lib/hooks/useClientDashboard";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarDays, CalendarRange, Euro, ListChecks } from "lucide-react";
 import { INTERVENTION_STATUSES } from "@/types/enums";
+import type { InterventionStatus } from "@/types/enums";
+
+// ─── Statut simplifié côté client ─────────────────────────────────────────────
+// Le client voit 3 états seulement : "À venir", "En cours", "Terminée".
+// Les statuts internes (à attribuer, assignée, refusée...) sont masqués.
+
+const CLIENT_STATUS_MAP: Record<InterventionStatus, { label: string; className: string }> = {
+  [INTERVENTION_STATUSES.A_ATTRIBUER]: { label: "À venir",   className: "bg-slate-100 text-slate-700 border-slate-200" },
+  [INTERVENTION_STATUSES.ASSIGNEE]:    { label: "À venir",   className: "bg-slate-100 text-slate-700 border-slate-200" },
+  [INTERVENTION_STATUSES.ACCEPTEE]:    { label: "À venir",   className: "bg-slate-100 text-slate-700 border-slate-200" },
+  [INTERVENTION_STATUSES.REFUSEE]:     { label: "À venir",   className: "bg-slate-100 text-slate-700 border-slate-200" },
+  [INTERVENTION_STATUSES.EN_COURS]:    { label: "En cours",  className: "bg-amber-50 text-amber-700 border-amber-200" },
+  [INTERVENTION_STATUSES.TERMINEE]:    { label: "Terminée",  className: "bg-green-50 text-green-700 border-green-200" },
+  [INTERVENTION_STATUSES.ANNULEE]:     { label: "Annulée",   className: "bg-slate-50 text-slate-400 border-slate-200" },
+};
+
+function ClientStatusBadge({ status }: { status: string }) {
+  const config = CLIENT_STATUS_MAP[status as InterventionStatus];
+  if (!config) return null;
+  return (
+    <Badge variant="outline" className={`text-xs border ${config.className}`}>
+      {config.label}
+    </Badge>
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -184,7 +209,7 @@ export default function ClientDashboardPage() {
                   </div>
                 </div>
                 <div className="ml-4 flex-shrink-0">
-                  <StatusBadge status={intervention.status} />
+                  <ClientStatusBadge status={intervention.status} />
                 </div>
               </div>
             ))}
