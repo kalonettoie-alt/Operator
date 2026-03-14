@@ -1,7 +1,7 @@
-// Layout de l'espace Prestataire.
-// Composant serveur : encapsule les composants de navigation (Sidebar, Header, BottomNav).
-// Le middleware garantit que seuls les utilisateurs avec le rôle "prestataire" atteignent ce layout.
+"use client";
 
+// Layout de l'espace Prestataire — TEMPORAIREMENT CLIENT COMPONENT pour debug logs
+import { useAuth } from "@/lib/hooks/useAuth";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -11,6 +11,9 @@ export default function PrestataireLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { isLoading, user } = useAuth();
+  console.log('[PAGE] prestataire layout render, isLoading:', isLoading, 'user:', !!user);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />

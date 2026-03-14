@@ -1,8 +1,7 @@
-// Layout de l'espace Admin.
-// Composant serveur : encapsule les composants de navigation (Sidebar, Header, BottomNav)
-// qui sont eux-mêmes des composants client.
-// Le middleware garantit que seuls les utilisateurs avec le rôle "admin" atteignent ce layout.
+"use client";
 
+// Layout de l'espace Admin — TEMPORAIREMENT CLIENT COMPONENT pour debug logs
+import { useAuth } from "@/lib/hooks/useAuth";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -12,6 +11,9 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { isLoading, user } = useAuth();
+  console.log('[PAGE] admin layout render, isLoading:', isLoading, 'user:', !!user);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Barre supérieure fixe */}
