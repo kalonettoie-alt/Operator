@@ -275,8 +275,12 @@ export function useDeleteIntervention() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      // Supprimer les rapports liés d'abord (si FK sans CASCADE)
+      // 1. Nullifier les FK entrantes (pas de CASCADE sur ces tables)
+      await supabase.from("reservations").update({ intervention_id: null }).eq("intervention_id", id);
+      await supabase.from("invoice_lines").update({ intervention_id: null }).eq("intervention_id", id);
+      // 2. Supprimer les rapports liés
       await supabase.from("rapports").delete().eq("intervention_id", id);
+      // 3. Supprimer l'intervention
       const { error } = await supabase.from("interventions").delete().eq("id", id);
       if (error) throw error;
     },
