@@ -75,12 +75,16 @@ async function createInterventionForReservation(
 ): Promise<{ created: boolean; error?: string }> {
   const { reservationId, logementId, checkIn, checkOut, logement } = params;
 
+  console.log('[ICAL→INTERV] checking reservation:', reservationId, 'checkOut:', checkOut);
+
   // 1. Vérifier si une intervention existe déjà pour cette réservation
   const { data: existing } = await supabase
     .from("interventions")
     .select("id")
     .eq("reservation_id", reservationId)
     .maybeSingle();
+
+  console.log('[ICAL→INTERV] intervention already exists?', !!existing);
 
   if (existing) {
     return { created: false }; // déjà créée (ex: double sync)
@@ -100,7 +104,8 @@ async function createInterventionForReservation(
   const checkinMemeJour = (sameDay?.length ?? 0) > 0;
 
   // 3. Créer l'intervention
-  const { error: insertErr } = await supabase
+  console.log('[ICAL→INTERV] inserting intervention for checkOut:', checkOut);
+  const { data, error: insertErr } = await supabase
     .from("interventions")
     .insert({
       reservation_id:      reservationId,
@@ -116,7 +121,9 @@ async function createInterventionForReservation(
       prix_client_ttc:     logement.prix_client_ttc ?? null,
       prix_prestataire_ht: logement.prix_prestataire_ht ?? null,
       prix_blanchisserie:  logement.prix_blanchisserie ?? null,
-    });
+    })
+    .select();
+  console.log('[ICAL→INTERV] insert result - data:', JSON.stringify(data), 'error:', JSON.stringify(insertErr));
 
   if (insertErr) {
     return { created: false, error: insertErr.message };
