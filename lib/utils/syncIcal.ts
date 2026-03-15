@@ -3,6 +3,7 @@
 // Lit les sources iCal actives, parse les événements et upserte les réservations.
 
 import ical from "node-ical";
+import type { VEvent } from "node-ical";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
@@ -87,6 +88,12 @@ async function syncOneSource(
       return stats;
     }
     icsText = await resp.text();
+
+    // ── DEBUG ──────────────────────────────────────────────────────────────
+    console.log("[ICAL] fetch response status:", resp.status);
+    console.log("[ICAL] raw text length:", icsText.length);
+    console.log("[ICAL] first 500 chars:", icsText.substring(0, 500));
+    // ───────────────────────────────────────────────────────────────────────
   } catch (err) {
     const msg = err instanceof Error && err.name === "AbortError"
       ? "Timeout — l'URL n'a pas répondu en 15s"
@@ -105,16 +112,36 @@ async function syncOneSource(
   }
 
   // 3. Récupérer les VEVENT actifs (non CANCELLED selon le flux iCal)
-  const events = Object.values(components).filter(
-    (c): c is NonNullable<typeof c> => !!c && c.type === "VEVENT" && !!c.uid && !!c.start
+  const allComponents = Object.values(components);
+  // ── DEBUG ────────────────────────────────────────────────────────────────
+  console.log("[ICAL] total components parsed:", allComponents.length);
+  console.log("[ICAL] component types:", allComponents.map((c) => c?.type).join(", "));
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const events = allComponents.filter(
+    (c): c is VEvent => !!c && c.type === "VEVENT"
   );
+
+  // ── DEBUG ────────────────────────────────────────────────────────────────
+  console.log("[ICAL] VEVENT with uid+start:", events.length);
+  events.forEach((ev) =>
+    console.log(
+      "[ICAL] event:",
+      "uid=", ev.uid.slice(0, 40),
+      "summary=", typeof ev.summary === "string" ? ev.summary : JSON.stringify(ev.summary),
+      "start=", ev.start instanceof Date ? ev.start.toISOString() : String(ev.start),
+      "end=", ev.end instanceof Date ? ev.end.toISOString() : String(ev.end),
+      "status=", ev.status ?? "(none)"
+    )
+  );
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Map uid → event (les événements CANCELLED dans le flux seront traités comme absents)
   const activeUids = new Set<string>();
   for (const ev of events) {
     // On ignore les événements explicitement CANCELLED dans le flux
-    if (ev.type === "VEVENT" && ev.status !== "CANCELLED") {
-      activeUids.add(String(ev.uid));
+    if (ev.status !== "CANCELLED") {
+      activeUids.add(ev.uid);
     }
   }
 
@@ -138,14 +165,20 @@ async function syncOneSource(
 
   // 5. Upsert chaque événement actif
   for (const ev of events) {
-    if (ev.type !== "VEVENT" || !ev.uid || !ev.start) continue;
     if (ev.status === "CANCELLED") continue;
 
-    const uid = String(ev.uid);
+    const uid = ev.uid;
     const checkIn  = toIsoDate(ev.start);
     const checkOut = toIsoDate(ev.end ?? ev.start);
 
-    if (!checkIn || !checkOut) continue;
+    // ── DEBUG ──────────────────────────────────────────────────────────────
+    console.log("[ICAL] upsert candidate:", uid.slice(0, 40), "checkIn=", checkIn, "checkOut=", checkOut, "inDB=", existingMap.has(uid));
+    // ───────────────────────────────────────────────────────────────────────
+
+    if (!checkIn || !checkOut) {
+      console.log("[ICAL] SKIPPED (no date):", uid.slice(0, 40), "start=", ev.start, "end=", ev.end);
+      continue;
+    }
 
     const guestName = paramToString(ev.summary) || null;
     const rawData = {
