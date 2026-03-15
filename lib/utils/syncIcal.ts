@@ -124,19 +124,7 @@ async function createInterventionForReservation(
     return { created: false };
   }
 
-  // 2. Vérifier checkin_meme_jour
-  const { data: sameDay } = await supabase
-    .from("reservations")
-    .select("id")
-    .eq("logement_id", logementId)
-    .eq("check_in", checkOut)
-    .neq("id", reservationId)
-    .neq("status", "cancelled")
-    .limit(1);
-
-  const checkinMemeJour = (sameDay?.length ?? 0) > 0;
-
-  // 3. Créer l'intervention
+  // 2. Créer l'intervention (checkin_meme_jour sera vérifié en post-création)
   const { data, error: insertErr } = await supabase
     .from("interventions")
     .insert({
@@ -146,10 +134,8 @@ async function createInterventionForReservation(
       date:                checkOut,
       type:                INTERVENTION_TYPES.MENAGE,
       status:              INTERVENTION_STATUSES.A_ATTRIBUER,
-      priority:            checkinMemeJour
-                             ? INTERVENTION_PRIORITIES.HAUTE
-                             : INTERVENTION_PRIORITIES.NORMALE,
-      checkin_meme_jour:   checkinMemeJour,
+      priority:            INTERVENTION_PRIORITIES.NORMALE,
+      checkin_meme_jour:   false,
       prix_client_ttc:     logement.prix_client_ttc ?? null,
       prix_prestataire_ht: logement.prix_prestataire_ht ?? null,
       prix_blanchisserie:  logement.prix_blanchisserie ?? null,
@@ -162,14 +148,36 @@ async function createInterventionForReservation(
     return { created: false, error: insertErr?.message ?? "pas de données retournées" };
   }
 
-  // 4. Lier l'intervention à la réservation
+  // 3. Lier l'intervention à la réservation
   await supabase
     .from("reservations")
     .update({ intervention_id: data.id })
     .eq("id", reservationId);
 
-  // 5. Si une autre réservation arrive le même jour que celle-ci part,
-  //    mettre à jour son intervention en checkin_meme_jour = true
+  // 4. Vérifier checkin_meme_jour en post-création.
+  //    On cherche si une autre réservation active sur ce logement a un check_in
+  //    égal au check_out de CETTE réservation (= un voyageur arrive le même jour
+  //    qu'un autre part). Si oui, mettre à jour l'intervention qu'on vient de créer.
+  //    Cette approche est robuste quel que soit l'ordre de traitement des événements.
+  const { data: nextCheckin } = await supabase
+    .from("reservations")
+    .select("id")
+    .eq("logement_id", logementId)
+    .eq("check_in", checkOut)
+    .neq("id", reservationId)
+    .neq("status", "cancelled")
+    .limit(1);
+
+  if ((nextCheckin?.length ?? 0) > 0) {
+    await supabase
+      .from("interventions")
+      .update({ checkin_meme_jour: true, priority: INTERVENTION_PRIORITIES.HAUTE })
+      .eq("id", data.id);
+  }
+
+  // 5. Cas inverse : si CETTE réservation arrive sur un logement où quelqu'un
+  //    part le même jour, l'intervention de ce départ doit aussi être marquée.
+  //    (couvre le cas où l'intervention du départ a été créée avant celle-ci)
   const { data: departingToday } = await supabase
     .from("interventions")
     .select("id")
