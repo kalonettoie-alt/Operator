@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Rss, Trash2, CheckCircle2, XCircle, Loader2, ToggleLeft, ToggleRight, ExternalLink } from "lucide-react";
+import { Rss, Trash2, CheckCircle2, XCircle, Loader2, ToggleLeft, ToggleRight, ExternalLink, RefreshCw } from "lucide-react";
 import * as Sentry from "@sentry/nextjs";
 
 import {
@@ -48,9 +48,15 @@ function formatDate(iso: string | null) {
   }).format(new Date(iso));
 }
 
-// ─── État de test d'une URL ───────────────────────────────────────────────────
+// ─── Types d'état ─────────────────────────────────────────────────────────────
 
 type TestState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ok";  message: string }
+  | { status: "err"; message: string };
+
+type SyncState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "ok";  message: string }
@@ -63,11 +69,13 @@ function SourceRow({
   onDelete,
   onToggle,
   onTest,
+  onSync,
 }: {
   source: ReturnType<typeof useReservationSources>["data"] extends (infer T)[] | undefined ? T : never;
   onDelete: () => void;
   onToggle: (active: boolean) => void;
   onTest: () => void;
+  onSync: () => void;
 }) {
   return (
     <div className="flex items-start gap-3 p-4 hover:bg-slate-50 transition-colors">
@@ -100,6 +108,16 @@ function SourceRow({
           className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-2.5 py-1.5 hover:bg-blue-50 transition-colors font-medium"
         >
           Tester
+        </button>
+
+        {/* Synchroniser cette source */}
+        <button
+          onClick={onSync}
+          title="Synchroniser maintenant"
+          className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-lg px-2.5 py-1.5 hover:bg-indigo-50 transition-colors font-medium flex items-center gap-1"
+        >
+          <RefreshCw className="size-3.5" />
+          Sync
         </button>
 
         {/* Lien externe */}
@@ -163,6 +181,10 @@ export default function AdminReservationsPage() {
   // Test sur l'URL du formulaire (avant création)
   const [formTestState, setFormTestState] = useState<TestState>({ status: "idle" });
 
+  // ── État sync ─────────────────────────────────────────────────────────────
+  const [globalSyncState, setGlobalSyncState] = useState<SyncState>({ status: "idle" });
+  const [syncStates, setSyncStates] = useState<Record<string, SyncState>>({});
+
   // ── Appel API test ────────────────────────────────────────────────────────
   async function testUrl(url: string, key: string, setFn: (s: TestState) => void) {
     if (!url.trim()) { toast.error("URL vide"); return; }
@@ -192,6 +214,46 @@ export default function AdminReservationsPage() {
 
   function setSourceTestState(id: string, state: TestState) {
     setTestStates((prev) => ({ ...prev, [id]: state }));
+  }
+
+  // ── Appel API sync ────────────────────────────────────────────────────────
+  async function syncSource(sourceId?: string) {
+    const setFn = sourceId
+      ? (s: SyncState) => setSyncStates((prev) => ({ ...prev, [sourceId]: s }))
+      : setGlobalSyncState;
+
+    setFn({ status: "loading" });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch("/api/admin/sync-ical", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(sourceId ? { source_id: sourceId } : {}),
+      });
+      const json = await res.json() as {
+        success?: boolean;
+        totalCreated?: number;
+        totalUpdated?: number;
+        totalCancelled?: number;
+        error?: string;
+      };
+      if (json.success) {
+        const msg = `${json.totalCreated ?? 0} créée(s), ${json.totalUpdated ?? 0} mise(s) à jour, ${json.totalCancelled ?? 0} annulée(s)`;
+        setFn({ status: "ok", message: msg });
+        toast.success(`Synchronisation terminée — ${msg}`);
+      } else {
+        setFn({ status: "err", message: json.error ?? "Erreur inconnue" });
+        toast.error(json.error ?? "Erreur lors de la synchronisation");
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      setFn({ status: "err", message: "Erreur réseau" });
+      toast.error("Erreur réseau lors de la synchronisation");
+    }
   }
 
   // ── Soumettre le formulaire ───────────────────────────────────────────────
@@ -270,10 +332,42 @@ export default function AdminReservationsPage() {
             </p>
           </div>
         </div>
-        <Button onClick={() => setShowForm((v) => !v)} variant={showForm ? "outline" : "default"}>
-          {showForm ? "Annuler" : "+ Ajouter une source"}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Synchroniser toutes les sources */}
+          {sources.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => syncSource()}
+              disabled={globalSyncState.status === "loading"}
+              className="flex items-center gap-2"
+            >
+              {globalSyncState.status === "loading"
+                ? <Loader2 className="size-4 animate-spin" />
+                : <RefreshCw className="size-4" />}
+              Synchroniser tout
+            </Button>
+          )}
+          <Button onClick={() => setShowForm((v) => !v)} variant={showForm ? "outline" : "default"}>
+            {showForm ? "Annuler" : "+ Ajouter une source"}
+          </Button>
+        </div>
       </div>
+
+      {/* ── Résultat sync globale ───────────────────────────────────────── */}
+      {globalSyncState.status !== "idle" && (
+        <div className={`flex items-center gap-2 text-sm font-medium rounded-lg px-4 py-2.5 ${
+          globalSyncState.status === "loading" ? "bg-indigo-50 text-indigo-600" :
+          globalSyncState.status === "ok"      ? "bg-green-50 text-green-700" :
+          "bg-red-50 text-red-600"
+        }`}>
+          {globalSyncState.status === "loading" && <Loader2 className="size-4 animate-spin" />}
+          {globalSyncState.status === "ok"      && <CheckCircle2 className="size-4" />}
+          {globalSyncState.status === "err"     && <XCircle className="size-4" />}
+          {globalSyncState.status === "loading"
+            ? "Synchronisation en cours…"
+            : globalSyncState.message}
+        </div>
+      )}
 
       {/* ── Formulaire d'ajout ──────────────────────────────────────────── */}
       {showForm && (
@@ -431,6 +525,7 @@ export default function AdminReservationsPage() {
                 <div className="divide-y">
                   {groupSources.map((source) => {
                     const ts = testStates[source.id] ?? { status: "idle" };
+                    const ss = syncStates[source.id] ?? { status: "idle" };
                     return (
                       <div key={source.id}>
                         <SourceRow
@@ -444,14 +539,24 @@ export default function AdminReservationsPage() {
                               (s) => setSourceTestState(source.id, s)
                             )
                           }
+                          onSync={() => syncSource(source.id)}
                         />
                         {/* Résultat du test pour cette source */}
                         {ts.status !== "idle" && (
-                          <div className={`px-4 pb-3 flex items-center gap-2 text-xs font-medium ${ts.status === "loading" ? "text-slate-500" : ts.status === "ok" ? "text-green-600" : "text-red-500"}`}>
+                          <div className={`px-4 pb-2 flex items-center gap-2 text-xs font-medium ${ts.status === "loading" ? "text-slate-500" : ts.status === "ok" ? "text-green-600" : "text-red-500"}`}>
                             {ts.status === "loading" && <Loader2 className="size-3.5 animate-spin" />}
                             {ts.status === "ok"      && <CheckCircle2 className="size-3.5" />}
                             {ts.status === "err"     && <XCircle className="size-3.5" />}
-                            {ts.status === "loading" ? "Test en cours…" : ts.status === "ok" ? ts.message : ts.message}
+                            {ts.status === "loading" ? "Test en cours…" : ts.message}
+                          </div>
+                        )}
+                        {/* Résultat de la sync pour cette source */}
+                        {ss.status !== "idle" && (
+                          <div className={`px-4 pb-3 flex items-center gap-2 text-xs font-medium ${ss.status === "loading" ? "text-indigo-500" : ss.status === "ok" ? "text-green-600" : "text-red-500"}`}>
+                            {ss.status === "loading" && <Loader2 className="size-3.5 animate-spin" />}
+                            {ss.status === "ok"      && <RefreshCw className="size-3.5" />}
+                            {ss.status === "err"     && <XCircle className="size-3.5" />}
+                            {ss.status === "loading" ? "Synchronisation en cours…" : ss.message}
                           </div>
                         )}
                       </div>

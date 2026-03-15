@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  /* Configuration ajoutée au fur et à mesure des étapes */
+  // node-ical doit rester en module Node.js natif (non bundlé par webpack)
+  // pour éviter l'erreur "BigInt is not a function" lors du build.
+  serverExternalPackages: ["node-ical"],
 };
 
 export default withSentryConfig(nextConfig, {
