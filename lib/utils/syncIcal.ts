@@ -68,12 +68,14 @@ async function createInterventionForReservation(
   params: {
     reservationId: string;
     logementId: string;
-    checkIn: string;    // date d'arrivée (YYYY-MM-DD)
-    checkOut: string;   // date de départ = date du ménage (YYYY-MM-DD)
+    checkIn: string;
+    checkOut: string;
     logement: LogementRow;
+    nbVoyageurs?: number | null;
+    hasBaby?: boolean | null;
   }
 ): Promise<{ created: boolean; error?: string }> {
-  const { reservationId, logementId, checkIn, checkOut, logement } = params;
+  const { reservationId, logementId, checkIn, checkOut, logement, nbVoyageurs, hasBaby } = params;
 
   console.log('[ICAL→INTERV] checking reservation:', reservationId, 'checkOut:', checkOut);
 
@@ -87,11 +89,10 @@ async function createInterventionForReservation(
   console.log('[ICAL→INTERV] intervention already exists?', !!existing);
 
   if (existing) {
-    return { created: false }; // déjà créée (ex: double sync)
+    return { created: false };
   }
 
-  // 2. Vérifier checkin_meme_jour :
-  //    Y a-t-il une autre réservation active sur ce logement avec check_in = checkOut ?
+  // 2. Vérifier checkin_meme_jour
   const { data: sameDay } = await supabase
     .from("reservations")
     .select("id")
@@ -121,30 +122,36 @@ async function createInterventionForReservation(
       prix_client_ttc:     logement.prix_client_ttc ?? null,
       prix_prestataire_ht: logement.prix_prestataire_ht ?? null,
       prix_blanchisserie:  logement.prix_blanchisserie ?? null,
+      nb_voyageurs:        nbVoyageurs ?? null,
+      has_baby:            hasBaby ?? null,
     })
-    .select();
+    .select("id")
+    .single();
   console.log('[ICAL→INTERV] insert result - data:', JSON.stringify(data), 'error:', JSON.stringify(insertErr));
 
-  if (insertErr) {
-    return { created: false, error: insertErr.message };
+  if (insertErr || !data) {
+    return { created: false, error: insertErr?.message ?? "pas de données retournées" };
   }
 
-  // 4. Si cette réservation arrive le même jour qu'une autre repart (check_in = checkIn_current),
-  //    mettre à jour l'intervention de cette autre réservation en checkin_meme_jour = true.
+  // 4. Lier l'intervention à la réservation
+  await supabase
+    .from("reservations")
+    .update({ intervention_id: data.id })
+    .eq("id", reservationId);
+
+  // 5. Si une autre réservation arrive le même jour que celle-ci part,
+  //    mettre à jour son intervention en checkin_meme_jour = true
   const { data: departingToday } = await supabase
     .from("interventions")
     .select("id")
     .eq("logement_id", logementId)
-    .eq("date", checkIn)               // l'autre intervention est le jour d'arrivée de cette réservation
+    .eq("date", checkIn)
     .neq("reservation_id", reservationId);
 
   if (departingToday && departingToday.length > 0) {
     await supabase
       .from("interventions")
-      .update({
-        checkin_meme_jour: true,
-        priority: INTERVENTION_PRIORITIES.HAUTE,
-      })
+      .update({ checkin_meme_jour: true, priority: INTERVENTION_PRIORITIES.HAUTE })
       .in("id", departingToday.map((r) => r.id));
   }
 
@@ -318,6 +325,21 @@ async function syncOneSource(
         stats.errors.push(`Update ${uid} : ${updateErr.message}`);
       } else {
         stats.updated++;
+
+        // Créer l'intervention si elle n'existe pas encore pour cette réservation
+        // (cas des réservations créées avant l'implémentation de la 10.3)
+        const result = await createInterventionForReservation(supabase, {
+          reservationId: existing.id,
+          logementId:    source.logement_id,
+          checkIn,
+          checkOut,
+          logement,
+        });
+        if (result.error) {
+          stats.errors.push(`Intervention (update) pour ${uid} : ${result.error}`);
+        } else if (result.created) {
+          stats.interventionsCreated++;
+        }
       }
     } else {
       // ── Création ──────────────────────────────────────────────────────────
