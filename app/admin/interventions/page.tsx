@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { PlusIcon, UserX } from "lucide-react";
 import { useInterventions, type InterventionFilters } from "@/lib/hooks/useInterventions";
 import { useClients, usePrestataires } from "@/lib/hooks/useProfiles";
+import { useLogements } from "@/lib/hooks/useLogements";
 import { InterventionForm } from "@/components/forms/InterventionForm";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
@@ -135,6 +136,7 @@ export default function InterventionsPage() {
   // ──
   const { data: clients } = useClients();
   const { data: prestataires } = usePrestataires();
+  const { data: logements } = useLogements();
 
   // Helpers pour mettre à jour un seul filtre
   function setFilter<K extends keyof InterventionFilters>(
@@ -167,6 +169,7 @@ export default function InterventionsPage() {
     filters.status !== undefined ||
     filters.clientId !== undefined ||
     filters.prestataireId !== undefined ||
+    filters.logementId !== undefined ||
     filters.dateFrom !== moisFrom ||
     filters.dateTo !== moisTo;
 
@@ -297,6 +300,25 @@ export default function InterventionsPage() {
               {prestataires?.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.full_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Logement */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Logement
+            </label>
+            <select
+              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              value={filters.logementId ?? ""}
+              onChange={(e) => setFilter("logementId", e.target.value)}
+            >
+              <option value="">Tous les logements</option>
+              {logements?.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
                 </option>
               ))}
             </select>

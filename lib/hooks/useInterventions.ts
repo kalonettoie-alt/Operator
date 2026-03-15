@@ -18,6 +18,7 @@ export interface InterventionFilters {
   dateTo?: string;   // format YYYY-MM-DD
   clientId?: string;
   prestataireId?: string;
+  logementId?: string;
 }
 
 // Type pour la liste (champs allégés)
@@ -86,7 +87,7 @@ export function useIntervention(id: string) {
 // ─── Hook : liste avec filtres ────────────────────────────────────────────────
 
 export function useInterventions(filters: InterventionFilters = {}) {
-  const { status, dateFrom, dateTo, clientId, prestataireId } = filters;
+  const { status, dateFrom, dateTo, clientId, prestataireId, logementId } = filters;
 
   return useQuery<InterventionWithRelations[]>({
     queryKey: [QUERY_KEY, filters],
@@ -106,6 +107,7 @@ export function useInterventions(filters: InterventionFilters = {}) {
       if (dateTo)         query = query.lte("date", dateTo);
       if (clientId)       query = query.eq("client_id", clientId);
       if (prestataireId)  query = query.eq("prestataire_id", prestataireId);
+      if (logementId)     query = query.eq("logement_id", logementId);
 
       const { data, error } = await query;
 
