@@ -267,3 +267,22 @@ export function useUpdateIntervention() {
     },
   });
 }
+
+// ─── Hook : supprimer définitivement une intervention ─────────────────────────
+
+export function useDeleteIntervention() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // Supprimer les rapports liés d'abord (si FK sans CASCADE)
+      await supabase.from("rapports").delete().eq("intervention_id", id);
+      const { error } = await supabase.from("interventions").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "all" });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], refetchType: "all" });
+    },
+  });
+}

@@ -76,6 +76,14 @@ export function useDeleteReservationSource() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      // Détacher les réservations liées avant suppression
+      // (évite l'erreur FK constraint sur reservations.source_id)
+      const { error: unlinkErr } = await supabase
+        .from("reservations")
+        .update({ source_id: null })
+        .eq("source_id", id);
+      if (unlinkErr) throw unlinkErr;
+
       const { error } = await supabase
         .from("reservation_sources")
         .delete()

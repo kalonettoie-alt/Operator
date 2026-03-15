@@ -4,9 +4,12 @@
 // Affiche toutes les infos + le rapport avec photos.
 
 import { use, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle, PencilIcon, UserX, Camera } from "lucide-react";
-import { useIntervention } from "@/lib/hooks/useInterventions";
+import { ArrowLeft, AlertTriangle, PencilIcon, UserX, Camera, Trash2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import * as Sentry from "@sentry/nextjs";
+import { useIntervention, useDeleteIntervention } from "@/lib/hooks/useInterventions";
 import { useRapport } from "@/lib/hooks/useRapports";
 import { useProfilesByIds } from "@/lib/hooks/useProfiles";
 import { InterventionForm } from "@/components/forms/InterventionForm";
@@ -117,9 +120,23 @@ export default function InterventionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const { data: intervention, isLoading, error } = useIntervention(id);
   const { data: rapport, isLoading: rapportLoading } = useRapport(id);
+  const deleteIntervention = useDeleteIntervention();
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
+  async function handleDelete() {
+    try {
+      await deleteIntervention.mutateAsync(id);
+      toast.success("Intervention supprimée");
+      router.push("/admin/interventions");
+    } catch (err) {
+      toast.error("Erreur lors de la suppression");
+      Sentry.captureException(err);
+    }
+  }
 
   // Résolution des noms des prestataires ayant refusé (refused_by est un tableau d'UUIDs)
   const refusedByIds = intervention?.refused_by ?? [];
@@ -189,8 +206,47 @@ export default function InterventionDetailPage({
             intervention.status !== INTERVENTION_STATUSES.ANNULEE && (
             <AnnulerInterventionDialog interventionId={intervention.id} />
           )}
+          {/* Bouton Supprimer */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsDeleteOpen(true)}
+            className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+          >
+            <Trash2 className="size-4 mr-1" />
+            Supprimer
+          </Button>
         </div>
       </div>
+
+      {/* Dialog confirmation suppression */}
+      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="size-5" />
+              Supprimer cette intervention ?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Cette action est irréversible. L&apos;intervention et son rapport seront définitivement supprimés.
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => setIsDeleteOpen(false)}>
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteIntervention.isPending}
+            >
+              {deleteIntervention.isPending
+                ? <><Loader2 className="size-4 mr-2 animate-spin" />Suppression…</>
+                : "Supprimer définitivement"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Section : informations générales */}
       <div className="grid gap-4 md:grid-cols-2">
