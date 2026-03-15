@@ -199,7 +199,7 @@ async function syncOneSource(
           check_out: checkOut,
           guest_name: guestName,
           raw_data: rawData,
-          status: existing.status === "cancelled" ? "confirmed" : existing.status,
+          status: existing.status === "cancelled" ? "active" : existing.status,
           updated_at: new Date().toISOString(),
         })
         .eq("id", existing.id);
@@ -222,7 +222,7 @@ async function syncOneSource(
           check_out: checkOut,
           guest_name: guestName,
           raw_data: rawData,
-          status: "confirmed",
+          status: "active",
         })
         .select();
 
