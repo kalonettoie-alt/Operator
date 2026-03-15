@@ -47,10 +47,19 @@ function paramToString(val: unknown): string {
   return "";
 }
 
-/** Formate une date (Date ou DateWithTimeZone) en "YYYY-MM-DD" */
+/** Formate une date (Date ou DateWithTimeZone) en "YYYY-MM-DD".
+ *  Utilise l'heure LOCALE (getDate/getMonth/getFullYear) et non UTC
+ *  pour éviter le décalage d'un jour sur les événements journée entière :
+ *  node-ical crée les dates à minuit heure locale, donc UTC+1 donne
+ *  2026-03-21T23:00:00Z → .toISOString().slice(0,10) retournerait "2026-03-21". */
 function toIsoDate(d: unknown): string {
   if (!d) return "";
-  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  if (d instanceof Date) {
+    const y   = d.getFullYear();
+    const m   = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
   return "";
 }
 
