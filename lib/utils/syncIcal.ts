@@ -211,7 +211,7 @@ async function syncOneSource(
       }
     } else {
       // Création
-      const { error: insertErr } = await supabase
+      const { data, error: insertErr } = await supabase
         .from("reservations")
         .insert({
           external_id: uid,
@@ -223,7 +223,10 @@ async function syncOneSource(
           guest_name: guestName,
           raw_data: rawData,
           status: "confirmed",
-        });
+        })
+        .select();
+
+      console.log("[ICAL] insert result - data:", JSON.stringify(data), "error:", JSON.stringify(insertErr));
 
       if (insertErr) {
         stats.errors.push(`Insert ${uid} : ${insertErr.message}`);
