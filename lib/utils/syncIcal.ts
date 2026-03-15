@@ -67,6 +67,14 @@ function toIsoDate(d: unknown): string {
 
 /**
  * Crée une intervention de ménage liée à une réservation.
+ *
+ * RÈGLE MÉTIER : on n'intervient QUE sur les check-out.
+ * - Un check-in ne génère JAMAIS d'intervention (le logement est déjà propre).
+ * - Si check-out et check-in sont le même jour, l'intervention est créée grâce
+ *   au check-out, pas au check-in (checkin_meme_jour = true → priorité haute).
+ * - Les événements iCal "0-jour" (checkIn === checkOut) sont des marqueurs
+ *   de blocage, pas des séjours réels → aucune intervention.
+ *
  * - date = check_out (le ménage se fait au départ du voyageur)
  * - checkin_meme_jour = true s'il y a une autre réservation qui arrive ce même jour
  * - priority = 'haute' si checkin_meme_jour
@@ -86,7 +94,11 @@ async function createInterventionForReservation(
 ): Promise<{ created: boolean; error?: string }> {
   const { reservationId, logementId, checkIn, checkOut, logement, nbVoyageurs, hasBaby } = params;
 
-  console.log('[ICAL→INTERV] checking reservation:', reservationId, 'checkOut:', checkOut);
+  // RÈGLE : pas d'intervention pour les événements sans séjour réel
+  // (checkIn >= checkOut = événement 0-jour ou marqueur d'arrivée iCal)
+  if (checkIn >= checkOut) {
+    return { created: false };
+  }
 
   // 1. Vérifier si une intervention existe déjà pour cette réservation
   const { data: existing } = await supabase
@@ -95,9 +107,20 @@ async function createInterventionForReservation(
     .eq("reservation_id", reservationId)
     .maybeSingle();
 
-  console.log('[ICAL→INTERV] intervention already exists?', !!existing);
-
   if (existing) {
+    return { created: false };
+  }
+
+  // Garde supplémentaire : éviter deux interventions le même jour pour le même logement
+  // (cas où deux events iCal auraient accidentellement le même checkout)
+  const { data: existingSameDay } = await supabase
+    .from("interventions")
+    .select("id")
+    .eq("logement_id", logementId)
+    .eq("date", checkOut)
+    .maybeSingle();
+
+  if (existingSameDay) {
     return { created: false };
   }
 
@@ -114,7 +137,6 @@ async function createInterventionForReservation(
   const checkinMemeJour = (sameDay?.length ?? 0) > 0;
 
   // 3. Créer l'intervention
-  console.log('[ICAL→INTERV] inserting intervention for checkOut:', checkOut);
   const { data, error: insertErr } = await supabase
     .from("interventions")
     .insert({
@@ -136,8 +158,6 @@ async function createInterventionForReservation(
     })
     .select("id")
     .single();
-  console.log('[ICAL→INTERV] insert result - data:', JSON.stringify(data), 'error:', JSON.stringify(insertErr));
-
   if (insertErr || !data) {
     return { created: false, error: insertErr?.message ?? "pas de données retournées" };
   }
