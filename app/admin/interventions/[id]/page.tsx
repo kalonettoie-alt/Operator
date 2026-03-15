@@ -32,7 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { Json } from "@/types/database";
-import { INTERVENTION_TYPES, INTERVENTION_STATUSES } from "@/types/enums";
+import { INTERVENTION_TYPES, INTERVENTION_STATUSES, INTERVENTION_PRIORITIES } from "@/types/enums";
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
 
@@ -190,9 +190,21 @@ export default function InterventionDetailPage({
             {" · "}
             {TYPE_LABELS[intervention.type] ?? intervention.type}
           </p>
+          {/* Bandeau check-in même jour */}
+          {intervention.checkin_meme_jour && (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-orange-50 border border-orange-200 px-3 py-1.5 text-sm font-medium text-orange-700 dark:bg-orange-950/30 dark:border-orange-800 dark:text-orange-400">
+              🏃 Check-in le même jour — arrivée des prochains voyageurs aujourd&apos;hui
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <StatusBadge status={intervention.status} />
+          {/* Badge Urgente */}
+          {intervention.priority === INTERVENTION_PRIORITIES.HAUTE && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950 dark:text-red-400">
+              ⚡ Urgente
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"

@@ -26,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { INTERVENTION_STATUSES, type InterventionStatus } from "@/types/enums";
+import { INTERVENTION_STATUSES, INTERVENTION_PRIORITIES, type InterventionStatus } from "@/types/enums";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -364,8 +364,14 @@ export default function InterventionsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <StatusBadge status={intervention.status} />
+                      {/* Badge Urgente si priorité haute */}
+                      {intervention.priority === INTERVENTION_PRIORITIES.HAUTE && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950 dark:text-red-400">
+                          ⚡ Urgente
+                        </span>
+                      )}
                       {/* Icône si au moins un prestataire a déjà refusé cette intervention */}
                       {(intervention.refused_by?.length ?? 0) > 0 && (
                         <span

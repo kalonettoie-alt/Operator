@@ -23,7 +23,7 @@ import type { DateClickArg } from "@fullcalendar/interaction";
 import { useInterventions } from "@/lib/hooks/useInterventions";
 import { useLogements } from "@/lib/hooks/useLogements";
 import { useClients, usePrestataires } from "@/lib/hooks/useProfiles";
-import { INTERVENTION_STATUSES } from "@/types/enums";
+import { INTERVENTION_STATUSES, INTERVENTION_PRIORITIES } from "@/types/enums";
 import type { InterventionStatus } from "@/types/enums";
 import type { InterventionWithRelations } from "@/lib/hooks/useInterventions";
 
@@ -99,30 +99,53 @@ function InterventionCard({
   intervention: InterventionWithRelations;
   onClick: () => void;
 }) {
-  const status  = intervention.status as InterventionStatus;
-  const color   = STATUS_COLOR[status] ?? "#94a3b8";
-  const label   = STATUS_LABEL[status] ?? status;
-  const type    = TYPE_LABELS[intervention.type] ?? intervention.type;
-  const city    = intervention.logement?.city;
-  const presta  = intervention.prestataire?.full_name;
+  const status    = intervention.status as InterventionStatus;
+  const color     = STATUS_COLOR[status] ?? "#94a3b8";
+  const label     = STATUS_LABEL[status] ?? status;
+  const type      = TYPE_LABELS[intervention.type] ?? intervention.type;
+  const city      = intervention.logement?.city;
+  const presta    = intervention.prestataire?.full_name;
+  const isUrgent  = intervention.priority === INTERVENTION_PRIORITIES.HAUTE;
 
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-white border rounded-xl p-3.5 hover:border-blue-200 hover:bg-blue-50/40 transition-colors shadow-sm group"
+      className={[
+        "w-full text-left border rounded-xl p-3.5 transition-colors shadow-sm group",
+        isUrgent
+          ? "bg-red-50 border-red-200 hover:border-red-300 hover:bg-red-100/60"
+          : "bg-white hover:border-blue-200 hover:bg-blue-50/40",
+      ].join(" ")}
     >
-      {/* Nom du logement */}
-      <p className="font-semibold text-sm text-gray-900 group-hover:text-blue-700 truncate">
-        {intervention.logement?.name ?? "Logement inconnu"}
-      </p>
+      {/* Nom du logement + badge Urgente */}
+      <div className="flex items-start justify-between gap-2">
+        <p className={[
+          "font-semibold text-sm truncate",
+          isUrgent ? "text-red-900 group-hover:text-red-700" : "text-gray-900 group-hover:text-blue-700",
+        ].join(" ")}>
+          {intervention.logement?.name ?? "Logement inconnu"}
+        </p>
+        {isUrgent && (
+          <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-red-100 border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+            ⚡ Urgente
+          </span>
+        )}
+      </div>
+
+      {/* Bandeau check-in même jour */}
+      {intervention.checkin_meme_jour && (
+        <p className="text-[10px] font-medium text-orange-600 mt-1.5 bg-orange-50 border border-orange-100 rounded px-1.5 py-0.5">
+          🏃 Check-in le même jour
+        </p>
+      )}
 
       {/* Badge statut */}
       <div className="flex items-center gap-1.5 mt-1.5">
         <span
           className="size-2 rounded-full shrink-0"
-          style={{ backgroundColor: color }}
+          style={{ backgroundColor: isUrgent ? "#ef4444" : color }}
         />
-        <span className="text-xs font-medium" style={{ color }}>
+        <span className="text-xs font-medium" style={{ color: isUrgent ? "#dc2626" : color }}>
           {label}
         </span>
       </div>
@@ -306,19 +329,25 @@ export default function AdminCalendrierPage() {
 
   // ── Événements FullCalendar ───────────────────────────────────────────────
   const events = useMemo(() =>
-    filtered.map((i) => ({
-      id:              i.id,
-      title:           i.logement?.name ?? "Logement inconnu",
-      date:            i.date,
-      backgroundColor: STATUS_COLOR[i.status as InterventionStatus] ?? "#94a3b8",
-      borderColor:     "transparent",
-      textColor:       "#ffffff",
-      extendedProps:   {
-        interventionId: i.id,
-        type:           i.type,
-        status:         i.status,
-      },
-    }))
+    filtered.map((i) => {
+      const isUrgent = i.priority === INTERVENTION_PRIORITIES.HAUTE;
+      return {
+        id:              i.id,
+        title:           i.logement?.name ?? "Logement inconnu",
+        date:            i.date,
+        // Priorité haute → rouge vif, sinon couleur du statut
+        backgroundColor: isUrgent ? "#ef4444" : (STATUS_COLOR[i.status as InterventionStatus] ?? "#94a3b8"),
+        borderColor:     "transparent",
+        textColor:       "#ffffff",
+        extendedProps:   {
+          interventionId:   i.id,
+          type:             i.type,
+          status:           i.status,
+          priority:         i.priority,
+          checkinMemeJour:  i.checkin_meme_jour,
+        },
+      };
+    })
   , [filtered]);
 
   // ── Handlers FullCalendar ─────────────────────────────────────────────────
