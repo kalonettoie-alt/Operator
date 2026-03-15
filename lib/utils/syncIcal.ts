@@ -1,13 +1,16 @@
 // lib/utils/syncIcal.ts
 // Logique de synchronisation iCal partagée entre le cron et le bouton admin.
-// Lit les sources iCal actives, parse les événements et upserte les réservations.
+// Lit les sources iCal actives, parse les événements, upserte les réservations
+// et crée automatiquement une intervention de ménage pour chaque nouvelle réservation.
 
 import ical from "node-ical";
 import type { VEvent } from "node-ical";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+import { INTERVENTION_STATUSES, INTERVENTION_TYPES, INTERVENTION_PRIORITIES } from "@/types/enums";
 
 type ReservationSourceRow = Database["public"]["Tables"]["reservation_sources"]["Row"];
+type LogementRow = Database["public"]["Tables"]["logements"]["Row"];
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -18,6 +21,8 @@ export interface SyncStats {
   created: number;
   updated: number;
   cancelled: number;
+  interventionsCreated: number;
+  interventionsCancelled: number;
   errors: string[];
 }
 
@@ -26,6 +31,8 @@ export interface SyncResult {
   totalCreated: number;
   totalUpdated: number;
   totalCancelled: number;
+  totalInterventionsCreated: number;
+  totalInterventionsCancelled: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -47,6 +54,121 @@ function toIsoDate(d: unknown): string {
   return "";
 }
 
+// ─── Création d'une intervention depuis une réservation ───────────────────
+
+/**
+ * Crée une intervention de ménage liée à une réservation.
+ * - date = check_out (le ménage se fait au départ du voyageur)
+ * - checkin_meme_jour = true s'il y a une autre réservation qui arrive ce même jour
+ * - priority = 'haute' si checkin_meme_jour
+ * - Met à jour les interventions existantes du logement si une arrivée tombe le même jour
+ */
+async function createInterventionForReservation(
+  supabase: SupabaseClient<Database>,
+  params: {
+    reservationId: string;
+    logementId: string;
+    checkIn: string;    // date d'arrivée (YYYY-MM-DD)
+    checkOut: string;   // date de départ = date du ménage (YYYY-MM-DD)
+    logement: LogementRow;
+  }
+): Promise<{ created: boolean; error?: string }> {
+  const { reservationId, logementId, checkIn, checkOut, logement } = params;
+
+  // 1. Vérifier si une intervention existe déjà pour cette réservation
+  const { data: existing } = await supabase
+    .from("interventions")
+    .select("id")
+    .eq("reservation_id", reservationId)
+    .maybeSingle();
+
+  if (existing) {
+    return { created: false }; // déjà créée (ex: double sync)
+  }
+
+  // 2. Vérifier checkin_meme_jour :
+  //    Y a-t-il une autre réservation active sur ce logement avec check_in = checkOut ?
+  const { data: sameDay } = await supabase
+    .from("reservations")
+    .select("id")
+    .eq("logement_id", logementId)
+    .eq("check_in", checkOut)
+    .neq("id", reservationId)
+    .neq("status", "cancelled")
+    .limit(1);
+
+  const checkinMemeJour = (sameDay?.length ?? 0) > 0;
+
+  // 3. Créer l'intervention
+  const { error: insertErr } = await supabase
+    .from("interventions")
+    .insert({
+      reservation_id:      reservationId,
+      logement_id:         logementId,
+      client_id:           logement.client_id,
+      date:                checkOut,
+      type:                INTERVENTION_TYPES.MENAGE,
+      status:              INTERVENTION_STATUSES.A_ATTRIBUER,
+      priority:            checkinMemeJour
+                             ? INTERVENTION_PRIORITIES.HAUTE
+                             : INTERVENTION_PRIORITIES.NORMALE,
+      checkin_meme_jour:   checkinMemeJour,
+      prix_client_ttc:     logement.prix_client_ttc ?? null,
+      prix_prestataire_ht: logement.prix_prestataire_ht ?? null,
+      prix_blanchisserie:  logement.prix_blanchisserie ?? null,
+    });
+
+  if (insertErr) {
+    return { created: false, error: insertErr.message };
+  }
+
+  // 4. Si cette réservation arrive le même jour qu'une autre repart (check_in = checkIn_current),
+  //    mettre à jour l'intervention de cette autre réservation en checkin_meme_jour = true.
+  const { data: departingToday } = await supabase
+    .from("interventions")
+    .select("id")
+    .eq("logement_id", logementId)
+    .eq("date", checkIn)               // l'autre intervention est le jour d'arrivée de cette réservation
+    .neq("reservation_id", reservationId);
+
+  if (departingToday && departingToday.length > 0) {
+    await supabase
+      .from("interventions")
+      .update({
+        checkin_meme_jour: true,
+        priority: INTERVENTION_PRIORITIES.HAUTE,
+      })
+      .in("id", departingToday.map((r) => r.id));
+  }
+
+  return { created: true };
+}
+
+// ─── Annulation d'une intervention liée à une réservation ────────────────
+
+async function cancelInterventionForReservation(
+  supabase: SupabaseClient<Database>,
+  reservationId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("interventions")
+    .update({
+      status: INTERVENTION_STATUSES.ANNULEE,
+      cancellation_reason: "Réservation annulée (sync iCal)",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("reservation_id", reservationId)
+    .in("status", [
+      INTERVENTION_STATUSES.A_ATTRIBUER,
+      INTERVENTION_STATUSES.ASSIGNEE,
+      INTERVENTION_STATUSES.ACCEPTEE,
+    ])
+    .select("id");
+
+  if (error) return false;
+  return (data?.length ?? 0) > 0;
+}
+
 // ─── Sync d'une source ─────────────────────────────────────────────────────
 
 async function syncOneSource(
@@ -60,6 +182,8 @@ async function syncOneSource(
     created: 0,
     updated: 0,
     cancelled: 0,
+    interventionsCreated: 0,
+    interventionsCancelled: 0,
     errors: [],
   };
 
@@ -88,12 +212,6 @@ async function syncOneSource(
       return stats;
     }
     icsText = await resp.text();
-
-    // ── DEBUG ──────────────────────────────────────────────────────────────
-    console.log("[ICAL] fetch response status:", resp.status);
-    console.log("[ICAL] raw text length:", icsText.length);
-    console.log("[ICAL] first 500 chars:", icsText.substring(0, 500));
-    // ───────────────────────────────────────────────────────────────────────
   } catch (err) {
     const msg = err instanceof Error && err.name === "AbortError"
       ? "Timeout — l'URL n'a pas répondu en 15s"
@@ -111,35 +229,14 @@ async function syncOneSource(
     return stats;
   }
 
-  // 3. Récupérer les VEVENT actifs (non CANCELLED selon le flux iCal)
-  const allComponents = Object.values(components);
-  // ── DEBUG ────────────────────────────────────────────────────────────────
-  console.log("[ICAL] total components parsed:", allComponents.length);
-  console.log("[ICAL] component types:", allComponents.map((c) => c?.type).join(", "));
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const events = allComponents.filter(
+  // 3. Filtrer les VEVENT
+  const events = Object.values(components).filter(
     (c): c is VEvent => !!c && c.type === "VEVENT"
   );
 
-  // ── DEBUG ────────────────────────────────────────────────────────────────
-  console.log("[ICAL] VEVENT with uid+start:", events.length);
-  events.forEach((ev) =>
-    console.log(
-      "[ICAL] event:",
-      "uid=", ev.uid.slice(0, 40),
-      "summary=", typeof ev.summary === "string" ? ev.summary : JSON.stringify(ev.summary),
-      "start=", ev.start instanceof Date ? ev.start.toISOString() : String(ev.start),
-      "end=", ev.end instanceof Date ? ev.end.toISOString() : String(ev.end),
-      "status=", ev.status ?? "(none)"
-    )
-  );
-  // ─────────────────────────────────────────────────────────────────────────
-
-  // Map uid → event (les événements CANCELLED dans le flux seront traités comme absents)
+  // Map uid → event (les CANCELLED seront traités comme absents du flux actif)
   const activeUids = new Set<string>();
   for (const ev of events) {
-    // On ignore les événements explicitement CANCELLED dans le flux
     if (ev.status !== "CANCELLED") {
       activeUids.add(ev.uid);
     }
@@ -163,7 +260,19 @@ async function syncOneSource(
     }
   }
 
-  // 5. Upsert chaque événement actif
+  // 5. Charger le logement une seule fois (client_id + prix)
+  const { data: logement, error: logErr } = await supabase
+    .from("logements")
+    .select("*")
+    .eq("id", source.logement_id)
+    .single();
+
+  if (logErr || !logement) {
+    stats.errors.push(`Logement introuvable : ${source.logement_id}`);
+    return stats;
+  }
+
+  // 6. Upsert chaque événement actif
   for (const ev of events) {
     if (ev.status === "CANCELLED") continue;
 
@@ -171,14 +280,7 @@ async function syncOneSource(
     const checkIn  = toIsoDate(ev.start);
     const checkOut = toIsoDate(ev.end ?? ev.start);
 
-    // ── DEBUG ──────────────────────────────────────────────────────────────
-    console.log("[ICAL] upsert candidate:", uid.slice(0, 40), "checkIn=", checkIn, "checkOut=", checkOut, "inDB=", existingMap.has(uid));
-    // ───────────────────────────────────────────────────────────────────────
-
-    if (!checkIn || !checkOut) {
-      console.log("[ICAL] SKIPPED (no date):", uid.slice(0, 40), "start=", ev.start, "end=", ev.end);
-      continue;
-    }
+    if (!checkIn || !checkOut) continue;
 
     const guestName = paramToString(ev.summary) || null;
     const rawData = {
@@ -191,15 +293,16 @@ async function syncOneSource(
     const existing = existingMap.get(uid);
 
     if (existing) {
-      // Mise à jour si les dates ou le nom ont changé
+      // ── Mise à jour ───────────────────────────────────────────────────────
       const { error: updateErr } = await supabase
         .from("reservations")
         .update({
-          check_in: checkIn,
-          check_out: checkOut,
+          check_in:   checkIn,
+          check_out:  checkOut,
           guest_name: guestName,
-          raw_data: rawData,
-          status: existing.status === "cancelled" ? "active" : existing.status,
+          raw_data:   rawData,
+          // Si elle était annulée dans notre DB mais réapparaît dans le flux → la réactiver
+          status:     existing.status === "cancelled" ? "active" : existing.status,
           updated_at: new Date().toISOString(),
         })
         .eq("id", existing.id);
@@ -210,33 +313,47 @@ async function syncOneSource(
         stats.updated++;
       }
     } else {
-      // Création
-      const { data, error: insertErr } = await supabase
+      // ── Création ──────────────────────────────────────────────────────────
+      const { data: inserted, error: insertErr } = await supabase
         .from("reservations")
         .insert({
           external_id: uid,
-          source_id: source.id,
+          source_id:   source.id,
           logement_id: source.logement_id,
-          platform: source.platform,
-          check_in: checkIn,
-          check_out: checkOut,
-          guest_name: guestName,
-          raw_data: rawData,
-          status: "active",
+          platform:    source.platform,
+          check_in:    checkIn,
+          check_out:   checkOut,
+          guest_name:  guestName,
+          raw_data:    rawData,
+          status:      "active",
         })
-        .select();
+        .select("id")
+        .single();
 
-      console.log("[ICAL] insert result - data:", JSON.stringify(data), "error:", JSON.stringify(insertErr));
+      if (insertErr || !inserted) {
+        stats.errors.push(`Insert ${uid} : ${insertErr?.message ?? "pas de données retournées"}`);
+        continue;
+      }
+      stats.created++;
 
-      if (insertErr) {
-        stats.errors.push(`Insert ${uid} : ${insertErr.message}`);
-      } else {
-        stats.created++;
+      // ── Créer l'intervention de ménage associée ───────────────────────────
+      const result = await createInterventionForReservation(supabase, {
+        reservationId: inserted.id,
+        logementId:    source.logement_id,
+        checkIn,
+        checkOut,
+        logement,
+      });
+
+      if (result.error) {
+        stats.errors.push(`Intervention pour ${uid} : ${result.error}`);
+      } else if (result.created) {
+        stats.interventionsCreated++;
       }
     }
   }
 
-  // 6. Annuler les réservations qui ne sont plus dans le flux
+  // 7. Annuler les réservations absentes du flux + leurs interventions
   for (const [uid, row] of existingMap.entries()) {
     if (!activeUids.has(uid) && row.status !== "cancelled") {
       const { error: cancelErr } = await supabase
@@ -246,13 +363,17 @@ async function syncOneSource(
 
       if (cancelErr) {
         stats.errors.push(`Cancel ${uid} : ${cancelErr.message}`);
-      } else {
-        stats.cancelled++;
+        continue;
       }
+      stats.cancelled++;
+
+      // Annuler l'intervention liée si elle n'est pas encore commencée
+      const cancelled = await cancelInterventionForReservation(supabase, row.id);
+      if (cancelled) stats.interventionsCancelled++;
     }
   }
 
-  // 7. Mettre à jour last_synced_at
+  // 8. Mettre à jour last_synced_at
   await supabase
     .from("reservation_sources")
     .update({ last_synced_at: new Date().toISOString() })
@@ -272,7 +393,6 @@ export async function syncIcalSources(
   supabase: SupabaseClient<Database>,
   sourceId?: string
 ): Promise<SyncResult> {
-  // Charger les sources actives
   let query = supabase
     .from("reservation_sources")
     .select("*")
@@ -285,10 +405,13 @@ export async function syncIcalSources(
   const { data: sources, error } = await query;
 
   if (error || !sources?.length) {
-    return { sources: [], totalCreated: 0, totalUpdated: 0, totalCancelled: 0 };
+    return {
+      sources: [],
+      totalCreated: 0, totalUpdated: 0, totalCancelled: 0,
+      totalInterventionsCreated: 0, totalInterventionsCancelled: 0,
+    };
   }
 
-  // Synchroniser chaque source (séquentiel pour éviter de surcharger les APIs externes)
   const results: SyncStats[] = [];
   for (const source of sources) {
     const stats = await syncOneSource(supabase, source);
@@ -296,9 +419,11 @@ export async function syncIcalSources(
   }
 
   return {
-    sources: results,
-    totalCreated:   results.reduce((s, r) => s + r.created,   0),
-    totalUpdated:   results.reduce((s, r) => s + r.updated,   0),
-    totalCancelled: results.reduce((s, r) => s + r.cancelled, 0),
+    sources:                    results,
+    totalCreated:               results.reduce((s, r) => s + r.created,                0),
+    totalUpdated:               results.reduce((s, r) => s + r.updated,                0),
+    totalCancelled:             results.reduce((s, r) => s + r.cancelled,              0),
+    totalInterventionsCreated:  results.reduce((s, r) => s + r.interventionsCreated,   0),
+    totalInterventionsCancelled:results.reduce((s, r) => s + r.interventionsCancelled, 0),
   };
 }

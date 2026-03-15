@@ -239,10 +239,18 @@ export default function AdminReservationsPage() {
         totalCreated?: number;
         totalUpdated?: number;
         totalCancelled?: number;
+        totalInterventionsCreated?: number;
+        totalInterventionsCancelled?: number;
         error?: string;
       };
       if (json.success) {
-        const msg = `${json.totalCreated ?? 0} créée(s), ${json.totalUpdated ?? 0} mise(s) à jour, ${json.totalCancelled ?? 0} annulée(s)`;
+        const parts = [
+          `${json.totalCreated ?? 0} réservation(s) créée(s)`,
+          `${json.totalUpdated ?? 0} mise(s) à jour`,
+          `${json.totalCancelled ?? 0} annulée(s)`,
+          `${json.totalInterventionsCreated ?? 0} intervention(s) générée(s)`,
+        ];
+        const msg = parts.join(", ");
         setFn({ status: "ok", message: msg });
         toast.success(`Synchronisation terminée — ${msg}`);
       } else {

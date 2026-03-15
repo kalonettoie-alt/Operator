@@ -47,10 +47,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      sources: result.sources.length,
-      totalCreated:   result.totalCreated,
-      totalUpdated:   result.totalUpdated,
-      totalCancelled: result.totalCancelled,
+      sources:                     result.sources.length,
+      totalCreated:                result.totalCreated,
+      totalUpdated:                result.totalUpdated,
+      totalCancelled:              result.totalCancelled,
+      totalInterventionsCreated:   result.totalInterventionsCreated,
+      totalInterventionsCancelled: result.totalInterventionsCancelled,
       details: result.sources,
     });
 
