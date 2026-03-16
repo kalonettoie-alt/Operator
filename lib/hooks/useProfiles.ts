@@ -55,6 +55,29 @@ export function useProfilesByIds(ids: string[]) {
   });
 }
 
+// ─── Hook : profil d'un client unique ────────────────────────────────────────
+
+/**
+ * Retourne le profil complet d'un client par son ID.
+ * Inclut les colonnes Stripe (stripe_customer_id, sepa_mandate_id, sepa_status, iban_last4).
+ */
+export function useClient(id: string) {
+  return useQuery<Profile>({
+    queryKey: [QUERY_KEY, id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error) throw new Error(error.message || JSON.stringify(error));
+      return data;
+    },
+  });
+}
+
 // ─── Hook : liste des prestataires ───────────────────────────────────────────
 
 /**

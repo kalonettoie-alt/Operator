@@ -2,7 +2,10 @@
 
 // Page : liste des clients (admin uniquement, lecture seule)
 // Affiche tous les profils avec le rôle "client".
+// Cliquer sur une ligne ouvre la fiche détail du client.
 
+import { useRouter } from "next/navigation";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { useClients } from "@/lib/hooks/useProfiles";
 import {
   Table,
@@ -35,6 +38,7 @@ function EmptyState() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ClientsPage() {
+  const router = useRouter();
   const { data: clients, isLoading, error } = useClients();
 
   if (isLoading) return <Loader />;
@@ -72,11 +76,16 @@ export default function ClientsPage() {
               <TableHead>Téléphone</TableHead>
               <TableHead>Entreprise</TableHead>
               <TableHead>Zone</TableHead>
+              <TableHead>SEPA</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {clients.map((client) => (
-              <TableRow key={client.id}>
+              <TableRow
+                key={client.id}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => router.push(`/admin/clients/${client.id}`)}
+              >
                 <TableCell className="font-medium">{client.full_name}</TableCell>
                 <TableCell>{client.email}</TableCell>
                 <TableCell>{client.phone ?? "—"}</TableCell>
@@ -84,8 +93,19 @@ export default function ClientsPage() {
                 <TableCell>
                   {client.zone ? (
                     <Badge variant="secondary">{client.zone}</Badge>
+                  ) : "—"}
+                </TableCell>
+                <TableCell>
+                  {client.sepa_status === "active" ? (
+                    <span className="flex items-center gap-1 text-xs text-green-700">
+                      <CheckCircle2 className="size-3.5" />
+                      Actif
+                    </span>
                   ) : (
-                    "—"
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <XCircle className="size-3.5" />
+                      Non configuré
+                    </span>
                   )}
                 </TableCell>
               </TableRow>
