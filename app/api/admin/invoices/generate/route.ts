@@ -171,6 +171,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 8. Générer les factures
+    // Le forfait blanchisserie est facturé UNIQUEMENT sur la première période du mois (1–15)
+    const periodStart = new Date(period_start);
+    const isFirstPeriod = periodStart.getDate() === 1;
+
     const created: InvoiceRow[] = [];
     const skipped: string[] = [];        // client_ids ignorés (doublon)
     const errors: string[] = [];
@@ -208,9 +212,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Blanchisserie forfait : une ligne par logement, montant du logement
-      for (const l of clientForfaits) {
-        totalBlanchisserie += l.prix_blanchisserie ?? 0;
+      // Blanchisserie forfait : une ligne par logement, uniquement sur la 1re période (day=1)
+      if (isFirstPeriod) {
+        for (const l of clientForfaits) {
+          totalBlanchisserie += l.prix_blanchisserie ?? 0;
+        }
       }
 
       const totalTtc = totalMenage + totalBlanchisserie;
@@ -289,19 +295,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Lignes blanchisserie forfait : UNE ligne par logement, indépendamment des interventions
-      for (const l of clientForfaits) {
-        if ((l.prix_blanchisserie ?? 0) > 0) {
-          lines.push({
-            invoice_id:      invoice.id,
-            intervention_id: null,
-            logement_id:     l.id,
-            type:            "blanchisserie_forfait",
-            description:     `Blanchisserie forfait — ${l.name}`,
-            unit_price:      l.prix_blanchisserie ?? 0,
-            quantity:        1,
-            total:           l.prix_blanchisserie ?? 0,
-          });
+      // Lignes blanchisserie forfait : UNE ligne par logement, uniquement sur la 1re période (day=1)
+      if (isFirstPeriod) {
+        for (const l of clientForfaits) {
+          if ((l.prix_blanchisserie ?? 0) > 0) {
+            lines.push({
+              invoice_id:      invoice.id,
+              intervention_id: null,
+              logement_id:     l.id,
+              type:            "blanchisserie_forfait",
+              description:     `Blanchisserie forfait — ${l.name}`,
+              unit_price:      l.prix_blanchisserie ?? 0,
+              quantity:        1,
+              total:           l.prix_blanchisserie ?? 0,
+            });
+          }
         }
       }
 
