@@ -8,11 +8,17 @@ import { supabase } from "@/lib/supabase/client";
 import type { Database } from "@/types/database";
 
 type InvoiceRow = Database["public"]["Tables"]["invoices"]["Row"];
+type InvoiceLineRow = Database["public"]["Tables"]["invoice_lines"]["Row"];
 
-// ─── Type enrichi (avec nom client) ──────────────────────────────────────────
+// ─── Types enrichis ───────────────────────────────────────────────────────────
 
 export interface InvoiceWithClient extends InvoiceRow {
   client: { id: string; full_name: string; email: string } | null;
+}
+
+export interface InvoiceDetail extends InvoiceRow {
+  client: { id: string; full_name: string; email: string } | null;
+  lines: InvoiceLineRow[];
 }
 
 // ─── Clé de cache ─────────────────────────────────────────────────────────────
@@ -52,6 +58,55 @@ export interface GenerateInvoicesResult {
   errors: string[];
   invoices: InvoiceRow[];
   message?: string;
+}
+
+// ─── Hook : détail d'une facture (avec lignes) ────────────────────────────────
+
+export function useInvoice(id: string) {
+  return useQuery<InvoiceDetail>({
+    queryKey: [QUERY_KEY, id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select(`
+          *,
+          client:profiles!invoices_client_id_fkey(id, full_name, email),
+          lines:invoice_lines(*)
+        `)
+        .eq("id", id)
+        .single();
+
+      if (error) throw new Error(error.message || JSON.stringify(error));
+      return data as InvoiceDetail;
+    },
+  });
+}
+
+// ─── Mutation : générer le PDF d'une facture ─────────────────────────────────
+
+export function useGeneratePdf() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ pdf_url: string }, Error, string>({
+    mutationFn: async (invoiceId: string) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Session expirée — veuillez vous reconnecter");
+
+      const response = await fetch(`/api/invoices/${invoiceId}/pdf`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${session.access_token}` },
+      });
+
+      const data = await response.json() as { pdf_url?: string; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Erreur lors de la génération du PDF");
+      return { pdf_url: data.pdf_url! };
+    },
+    onSuccess: (_, invoiceId) => {
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY, invoiceId] });
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+  });
 }
 
 // ─── Mutation : générer les factures pour une période ────────────────────────

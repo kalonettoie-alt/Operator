@@ -5,6 +5,7 @@
 // et d'afficher la liste de toutes les factures existantes.
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { FileText, Zap, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
@@ -212,6 +213,7 @@ export default function FacturationPage() {
   }
 
   // Données
+  const router = useRouter();
   const { data: invoices, isLoading, error } = useInvoices();
   const generateMutation = useGenerateInvoices();
 
@@ -343,7 +345,11 @@ export default function FacturationPage() {
               </TableHeader>
               <TableBody>
                 {invoices.map((invoice) => (
-                  <TableRow key={invoice.id} className="hover:bg-muted/50">
+                  <TableRow
+                    key={invoice.id}
+                    className="hover:bg-muted/50 cursor-pointer"
+                    onClick={() => router.push(`/admin/facturation/${invoice.id}`)}
+                  >
                     <TableCell className="font-mono text-sm font-medium">
                       {invoice.invoice_number}
                     </TableCell>
