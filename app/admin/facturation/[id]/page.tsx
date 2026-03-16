@@ -6,10 +6,10 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, FileText, Download, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
-import { useInvoice, useGeneratePdf } from "@/lib/hooks/useInvoices";
+import { useInvoice, useGeneratePdf, useSendInvoice } from "@/lib/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,15 +74,25 @@ export default function FactureDetailPage({
   const { id } = use(params);
   const { data: invoice, isLoading, error } = useInvoice(id);
   const generatePdf = useGeneratePdf();
+  const sendInvoice = useSendInvoice();
 
   async function handleGeneratePdf() {
     try {
       const result = await generatePdf.mutateAsync(id);
       toast.success("PDF généré avec succès");
-      // Ouvrir le PDF dans un nouvel onglet
       window.open(result.pdf_url, "_blank");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de la génération du PDF");
+      Sentry.captureException(err);
+    }
+  }
+
+  async function handleSendInvoice() {
+    try {
+      await sendInvoice.mutateAsync(id);
+      toast.success("Facture validée et envoyée par email au client");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de l'envoi de la facture");
       Sentry.captureException(err);
     }
   }
@@ -139,8 +149,8 @@ export default function FactureDetailPage({
           </p>
         </div>
 
-        {/* Actions PDF */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Actions */}
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
           {invoice.pdf_url && (
             <Button variant="outline" size="sm" asChild>
               <a href={invoice.pdf_url} target="_blank" rel="noopener noreferrer">
@@ -150,9 +160,10 @@ export default function FactureDetailPage({
             </Button>
           )}
           <Button
+            variant="outline"
             size="sm"
             onClick={handleGeneratePdf}
-            disabled={generatePdf.isPending}
+            disabled={generatePdf.isPending || sendInvoice.isPending}
           >
             {generatePdf.isPending ? (
               <><Loader2 className="size-4 mr-2 animate-spin" />Génération…</>
@@ -160,6 +171,21 @@ export default function FactureDetailPage({
               <><FileText className="size-4 mr-2" />{invoice.pdf_url ? "Regénérer PDF" : "Générer PDF"}</>
             )}
           </Button>
+          {/* Bouton "Valider et envoyer" — visible uniquement sur les brouillons */}
+          {invoice.status === "draft" && (
+            <Button
+              size="sm"
+              onClick={handleSendInvoice}
+              disabled={sendInvoice.isPending || generatePdf.isPending}
+              className="bg-amber-700 hover:bg-amber-800 text-white"
+            >
+              {sendInvoice.isPending ? (
+                <><Loader2 className="size-4 mr-2 animate-spin" />Envoi en cours…</>
+              ) : (
+                <><Send className="size-4 mr-2" />Valider et envoyer</>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -192,6 +218,11 @@ export default function FactureDetailPage({
             <p className="text-sm font-medium mt-0.5">
               {invoice.due_date ? formatDate(invoice.due_date) : "—"}
             </p>
+            {invoice.sent_at && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Envoyée le {formatDate(invoice.sent_at)}
+              </p>
+            )}
           </CardContent>
         </Card>
 

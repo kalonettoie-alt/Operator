@@ -109,6 +109,39 @@ export function useGeneratePdf() {
   });
 }
 
+// ─── Mutation : valider et envoyer une facture par email ─────────────────────
+
+export interface SendInvoiceResult {
+  success:  boolean;
+  pdf_url:  string;
+  due_date: string;
+}
+
+export function useSendInvoice() {
+  const queryClient = useQueryClient();
+
+  return useMutation<SendInvoiceResult, Error, string>({
+    mutationFn: async (invoiceId: string) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Session expirée — veuillez vous reconnecter");
+
+      const response = await fetch(`/api/invoices/${invoiceId}/send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      const data = await response.json() as SendInvoiceResult & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Erreur lors de l'envoi");
+      return data;
+    },
+    onSuccess: (_, invoiceId) => {
+      // Rafraîchir la facture concernée et la liste complète
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY, invoiceId] });
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+  });
+}
+
 // ─── Mutation : générer les factures pour une période ────────────────────────
 
 export function useGenerateInvoices() {

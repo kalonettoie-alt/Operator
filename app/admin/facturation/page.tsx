@@ -6,10 +6,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Zap, ChevronLeft, ChevronRight } from "lucide-react";
+import { FileText, Zap, ChevronLeft, ChevronRight, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
-import { useInvoices, useGenerateInvoices } from "@/lib/hooks/useInvoices";
+import { useInvoices, useGenerateInvoices, useSendInvoice } from "@/lib/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -216,6 +216,19 @@ export default function FacturationPage() {
   const router = useRouter();
   const { data: invoices, isLoading, error } = useInvoices();
   const generateMutation = useGenerateInvoices();
+  const sendMutation = useSendInvoice();
+
+  async function handleSendInvoice(e: React.MouseEvent, invoiceId: string) {
+    // Empêche le clic de propager vers la ligne (navigation)
+    e.stopPropagation();
+    try {
+      await sendMutation.mutateAsync(invoiceId);
+      toast.success("Facture envoyée par email au client");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de l'envoi");
+      Sentry.captureException(err);
+    }
+  }
 
   async function handleGenerate() {
     if (!periodStart || !periodEnd || periodStart > periodEnd) {
@@ -341,6 +354,7 @@ export default function FacturationPage() {
                   <TableHead className="text-right">Total TTC</TableHead>
                   <TableHead>Échéance</TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -377,6 +391,25 @@ export default function FacturationPage() {
                     </TableCell>
                     <TableCell>
                       <InvoiceStatusBadge status={invoice.status} />
+                    </TableCell>
+                    {/* Bouton envoi rapide — uniquement sur les brouillons */}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {invoice.status === "draft" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                          onClick={(e) => handleSendInvoice(e, invoice.id)}
+                          disabled={sendMutation.isPending}
+                          title="Valider et envoyer par email"
+                        >
+                          {sendMutation.isPending ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Send className="size-3.5" />
+                          )}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

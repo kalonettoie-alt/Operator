@@ -7,9 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { readFileSync } from "fs";
-import { join } from "path";
 import { createServerClient } from "@/lib/supabase/server";
+import { LOGO_DELTOM_BASE64 } from "@/lib/assets/logo-deltom-base64";
 import * as Sentry from "@sentry/nextjs";
 import type { Database } from "@/types/database";
 
@@ -31,34 +30,43 @@ function formatDate(dateStr: string): string {
 
 function formatMonthYear(dateStr: string): string {
   const d = new Date(dateStr);
-  // ex : "Février 2025"
   const month = new Intl.DateTimeFormat("fr-FR", { month: "long" }).format(d);
   return month.charAt(0).toUpperCase() + month.slice(1) + " " + d.getFullYear();
 }
 
+// Formatage EUR sans caractères unicode spéciaux (pdf-lib n'encode qu'en latin-1)
 function formatPrix(value: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency", currency: "EUR",
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(value).replace(/[\u00a0\u202f]/g, " ");
+  const abs = Math.abs(value);
+  const str = abs.toFixed(2).replace(".", ",");
+  // groupes de milliers
+  const parts = str.split(",");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const sign = value < 0 ? "-" : "";
+  return `${sign}${parts.join(",")} EUR`;
 }
 
-// Extrait le nom du logement depuis la description (format "Ménage — LogementName — date")
+// Extrait le nom du logement depuis la description
+// Format attendu : "Menage — LogementName — dd/mm/yyyy" ou "Blanchisserie — LogementName — ..."
 function extractLogementName(description: string): string {
-  const parts = description.split(" — ");
+  const parts = description.split(" \u2014 "); // em dash
   if (parts.length >= 2) return parts[1].trim();
+  // Fallback : séparateur tiret court
+  const parts2 = description.split(" - ");
+  if (parts2.length >= 2) return parts2[1].trim();
   return description;
 }
 
 // Extrait la date courte (dd/mm) depuis la description
 function extractShortDate(description: string): string {
-  const parts = description.split(" — ");
+  // Cherche un pattern dd/mm ou dd/mm/yyyy en fin de description
+  const match = description.match(/(\d{2}\/\d{2})(?:\/\d{4})?(?:\s|$)/);
+  if (match) return match[1];
+  // Fallback : dernier segment après em-dash
+  const parts = description.split(" \u2014 ");
   if (parts.length >= 3) {
-    // format dd/mm/yyyy → dd/mm
     const datePart = parts[2].trim();
     const [day, month] = datePart.split("/");
     if (day && month) return `${day}/${month}`;
-    return datePart;
   }
   return "";
 }
@@ -66,33 +74,34 @@ function extractShortDate(description: string): string {
 // ─── Groupement des lignes par logement ──────────────────────────────────────
 
 interface LogementGroup {
-  logementId: string;
-  logementName: string;
-  menageDates: string[];      // dates courtes pour les interventions ménage
-  menageUnitPrice: number;    // prix unitaire HT (sans TVA)
-  menageCount: number;        // nombre d'interventions
+  logementId:     string;
+  logementName:   string;
+  menageDates:    string[];
+  menageUnitHT:   number;   // prix unitaire HT pour les interventions ménage
+  menageCount:    number;
   blanchisserie: {
-    description: string;
-    unitPrice: number;        // prix HT
-    quantity: number;
+    label:     string;
+    unitHT:    number;
+    quantity:  number;
   } | null;
 }
 
+// Les unit_price dans invoice_lines sont stockés en TTC (= prix_client_ttc)
 function groupLinesByLogement(lines: InvoiceLine[]): LogementGroup[] {
   const TVA = 0.20;
   const groups = new Map<string, LogementGroup>();
 
   for (const line of lines) {
-    const logId = line.logement_id;
+    const logId   = line.logement_id;
     const logName = extractLogementName(line.description);
 
     if (!groups.has(logId)) {
       groups.set(logId, {
-        logementId: logId,
+        logementId:   logId,
         logementName: logName,
-        menageDates: [],
-        menageUnitPrice: 0,
-        menageCount: 0,
+        menageDates:  [],
+        menageUnitHT: 0,
+        menageCount:  0,
         blanchisserie: null,
       });
     }
@@ -100,19 +109,18 @@ function groupLinesByLogement(lines: InvoiceLine[]): LogementGroup[] {
     const g = groups.get(logId)!;
 
     if (line.type === "menage") {
-      // unit_price stocké est TTC → on calcule HT
-      const priceHT = line.unit_price / (1 + TVA);
-      g.menageCount += (line.quantity ?? 1);
-      g.menageUnitPrice = priceHT; // même prix pour toutes les interventions d'un logement
+      const unitHT = line.unit_price / (1 + TVA);
+      g.menageCount  += (line.quantity ?? 1);
+      g.menageUnitHT  = unitHT; // même prix unitaire pour toutes les interventions d'un logement
       const shortDate = extractShortDate(line.description);
       if (shortDate) g.menageDates.push(shortDate);
     } else {
       // blanchisserie_intervention ou blanchisserie_forfait
-      const priceHT = line.unit_price / (1 + TVA);
+      const unitHT = line.unit_price / (1 + TVA);
       if (!g.blanchisserie) {
         g.blanchisserie = {
-          description: `Blanchisserie pour : ${logName}`,
-          unitPrice: priceHT,
+          label:    `Blanchisserie pour : ${logName}`,
+          unitHT,
           quantity: line.quantity ?? 1,
         };
       } else {
@@ -136,21 +144,27 @@ async function buildPdf(invoice: InvoiceWithDetails): Promise<Uint8Array> {
   const fontBold    = await doc.embedFont(StandardFonts.HelveticaBold);
   const fontRegular = await doc.embedFont(StandardFonts.Helvetica);
 
-  // Palette
+  // ── Palette ────────────────────────────────────────────────────────────────
   const black     = rgb(0.09, 0.09, 0.09);
   const muted     = rgb(0.40, 0.40, 0.40);
   const white     = rgb(1, 1, 1);
   const borderClr = rgb(0.80, 0.80, 0.80);
-  const stripeClr = rgb(0.96, 0.96, 0.96);
-  // Doré/olive foncé pour l'en-tête tableau (#8B7D3C)
-  const headerClr = rgb(0.545, 0.490, 0.235);
-  // Texte total TTC rouge/doré (#C0392B → adapté en brun-rouge)
-  const totalClr  = rgb(0.75, 0.22, 0.17);
-  const darkTeal  = rgb(0.118, 0.239, 0.239); // #1e3d3d
+  const stripeClr = rgb(0.96, 0.95, 0.93);
 
-  const mx = 45; // marge horizontale
+  // Doré/olive foncé #8B7D3C
+  const golden    = rgb(0.545, 0.490, 0.235);
+  // Fond beige très léger pour les totaux
+  const beigeClr  = rgb(0.97, 0.95, 0.88);
+  // Fond section logement
+  const sectionBg = rgb(0.93, 0.91, 0.85);
+  // Teal sombre #1e3d3d pour le logo texte fallback
+  const darkTeal  = rgb(0.118, 0.239, 0.239);
 
-  // Helper texte (repère Y depuis le haut)
+  const mx = 45; // marge horizontale gauche/droite
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  // Dessine du texte. yFromTop = distance depuis le haut de la page.
   function txt(
     str: string,
     xPos: number,
@@ -159,31 +173,48 @@ async function buildPdf(invoice: InvoiceWithDetails): Promise<Uint8Array> {
       font?:       typeof fontBold;
       size?:       number;
       color?:      typeof black;
-      alignRight?: boolean;
+      alignRight?: boolean; // aligner à droite dans maxWidth
       maxWidth?:   number;
     } = {}
   ) {
-    const f      = opts.font  ?? fontRegular;
-    const s      = opts.size  ?? 9;
-    const c      = opts.color ?? black;
-    const yPdf   = height - yFromTop;
-    let finalX   = xPos;
+    const f    = opts.font  ?? fontRegular;
+    const s    = opts.size  ?? 9;
+    const c    = opts.color ?? black;
+    const yPdf = height - yFromTop;
+    let finalX = xPos;
     if (opts.alignRight && opts.maxWidth !== undefined) {
       finalX = xPos + opts.maxWidth - f.widthOfTextAtSize(str, s);
     }
     page.drawText(str, { x: finalX, y: yPdf, font: f, size: s, color: c });
   }
 
-  function hLine(yFromTop: number, x1 = mx, x2 = width - mx, color = borderClr, thickness = 0.5) {
+  function hLine(
+    yFromTop: number,
+    x1 = mx,
+    x2 = width - mx,
+    color = borderClr,
+    thickness = 0.5
+  ) {
     page.drawLine({
       start: { x: x1, y: height - yFromTop },
       end:   { x: x2, y: height - yFromTop },
-      thickness, color,
+      thickness,
+      color,
     });
   }
 
-  function fillRect(xPos: number, yFromTop: number, w: number, h: number, color: typeof black) {
-    page.drawRectangle({ x: xPos, y: height - yFromTop - h, width: w, height: h, color });
+  function fillRect(
+    xPos: number,
+    yFromTop: number,
+    w: number,
+    h: number,
+    color: ReturnType<typeof rgb>
+  ) {
+    page.drawRectangle({
+      x: xPos, y: height - yFromTop - h,
+      width: w, height: h,
+      color,
+    });
   }
 
   // ── Variables société ──────────────────────────────────────────────────────
@@ -195,35 +226,49 @@ async function buildPdf(invoice: InvoiceWithDetails): Promise<Uint8Array> {
   const companyEmail   = process.env.COMPANY_EMAIL   ?? "";
 
   // ── Logo centré en haut ────────────────────────────────────────────────────
-  let y = 20;
+  let y = 22;
+
+  // Le logo est inliné en base64 dans LOGO_DELTOM_BASE64
+  // → garanti disponible même dans les fonctions serverless Vercel
   try {
-    const logoPath = join(process.cwd(), "public", "logo-deltom.png");
-    const logoData = readFileSync(logoPath);
-    const logoImg  = await doc.embedPng(logoData);
-    const logoW    = 70;
-    const logoH    = 70;
-    const logoX    = (width - logoW) / 2;
-    page.drawImage(logoImg, { x: logoX, y: height - y - logoH, width: logoW, height: logoH });
-    y += logoH + 10;
-  } catch {
-    // Si le logo est absent, on affiche le nom en texte
-    txt(companyName, (width / 2) - 30, y + 20, { font: fontBold, size: 20, color: darkTeal });
-    y += 40;
+    const logoBytes = Buffer.from(LOGO_DELTOM_BASE64, "base64");
+    const logoImg   = await doc.embedPng(new Uint8Array(logoBytes));
+    const logoW     = 72;
+    const logoH     = 72;
+    const logoX     = (width - logoW) / 2;
+    page.drawImage(logoImg, {
+      x:      logoX,
+      y:      height - y - logoH,
+      width:  logoW,
+      height: logoH,
+    });
+    y += logoH + 12;
+  } catch (logoError) {
+    // Fallback texte si le logo ne peut pas être chargé
+    Sentry.captureException(logoError);
+    txt(companyName, (width / 2) - 35, y + 22, {
+      font: fontBold, size: 22, color: darkTeal,
+    });
+    y += 50;
   }
+
+  // ── Ligne dorée sous le logo ───────────────────────────────────────────────
+  hLine(y, mx, width - mx, golden, 2);
+  y += 16;
 
   // ── En-tête : société gauche | client droit ────────────────────────────────
   const leftX  = mx;
-  const rightX = width / 2 + 20;
-  const infoY  = y;
+  const rightX = width / 2 + 10;
+  const infoStartY = y;
 
   // Colonne gauche : infos société
-  let leftY = infoY;
-  txt(companyName,              leftX, leftY, { font: fontBold, size: 10, color: darkTeal });
+  let leftY = infoStartY;
+  txt(companyName, leftX, leftY, { font: fontBold, size: 10, color: darkTeal });
   leftY += 14;
+
   if (companyAddress) {
-    // Découpage adresse sur 2 lignes si virgule
-    const addrParts = companyAddress.split(",");
-    for (const part of addrParts) {
+    // Découpage sur plusieurs lignes si virgule
+    for (const part of companyAddress.split(",")) {
       txt(part.trim(), leftX, leftY, { size: 8, color: muted });
       leftY += 11;
     }
@@ -232,10 +277,8 @@ async function buildPdf(invoice: InvoiceWithDetails): Promise<Uint8Array> {
     txt(`SIRET : ${companySiret}`, leftX, leftY, { size: 8, color: muted });
     leftY += 11;
   }
-  if (companyApe) {
-    txt(`Code APE : ${companyApe}`, leftX, leftY, { size: 8, color: muted });
-    leftY += 11;
-  }
+  txt(`Code APE : ${companyApe}`, leftX, leftY, { size: 8, color: muted });
+  leftY += 11;
   if (companyPhone) {
     txt(`Tel : ${companyPhone}`, leftX, leftY, { size: 8, color: muted });
     leftY += 11;
@@ -246,10 +289,11 @@ async function buildPdf(invoice: InvoiceWithDetails): Promise<Uint8Array> {
   }
 
   // Colonne droite : infos client
-  let rightY = infoY;
-  txt("Client :", rightX, rightY, { size: 8, color: muted });
+  let rightY = infoStartY;
+  const clientName = invoice.client?.full_name ?? "Client inconnu";
+  txt("Facture a l'attention de :", rightX, rightY, { size: 8, color: muted });
   rightY += 13;
-  txt(invoice.client?.full_name ?? "Client inconnu", rightX, rightY, { font: fontBold, size: 10 });
+  txt(clientName, rightX, rightY, { font: fontBold, size: 10, color: black });
   rightY += 13;
   if (invoice.client?.email) {
     txt(invoice.client.email, rightX, rightY, { size: 8, color: muted });
@@ -260,178 +304,196 @@ async function buildPdf(invoice: InvoiceWithDetails): Promise<Uint8Array> {
     rightY += 11;
   }
 
-  // ── Séparateur ────────────────────────────────────────────────────────────
-  y = Math.max(leftY, rightY) + 12;
-  hLine(y, mx, width - mx, headerClr, 1.5);
-  y += 16;
+  // ── Séparateur doré ────────────────────────────────────────────────────────
+  y = Math.max(leftY, rightY) + 14;
+  hLine(y, mx, width - mx, golden, 1.5);
+  y += 18;
 
-  // ── Bloc facture ──────────────────────────────────────────────────────────
-  // Partie gauche : N° facture, mois, description, date
-  const blockRightX = width - mx - 200;
+  // ── Bloc informations facture ──────────────────────────────────────────────
+  // Gauche : N° facture, mois, description, date
+  // Droite : Règlement
 
-  txt(`Facture N° ${invoice.invoice_number}`, mx, y, { font: fontBold, size: 12, color: darkTeal });
-  y += 16;
+  txt(`Facture N  ${invoice.invoice_number}`, mx, y, {
+    font: fontBold, size: 13, color: darkTeal,
+  });
+  y += 18;
 
   const periodLabel = formatMonthYear(invoice.period_start);
-  txt(periodLabel, mx, y, { size: 10, color: muted });
-  y += 13;
+  txt(periodLabel, mx, y, { font: fontBold, size: 10, color: golden });
+  y += 14;
 
   txt("Description du projet : Nettoyage, Blanchisserie", mx, y, { size: 9, color: muted });
-  y += 13;
+  y += 12;
 
-  txt(`Date d'emission : ${formatDate(invoice.created_at ?? new Date().toISOString())}`, mx, y, { size: 9, color: muted });
+  const emissionDate = formatDate(invoice.created_at ?? new Date().toISOString());
+  txt(`Date d emission : ${emissionDate}`, mx, y, { size: 9, color: muted });
 
-  // Partie droite : Règlement
-  txt("Reglement : A reception", blockRightX, y - 4, {
-    font: fontBold, size: 9, color: darkTeal,
-    alignRight: true, maxWidth: 200,
+  // Règlement aligné à droite
+  txt("Reglement : A reception", width - mx, y - 1, {
+    font: fontBold, size: 9, color: golden,
+    alignRight: true, maxWidth: width - mx - (width / 2),
   });
   y += 22;
 
   // ── En-tête tableau ───────────────────────────────────────────────────────
-  const tableW   = width - 2 * mx;
-  const headerH  = 20;
+  const tableW  = width - 2 * mx;
+  const headerH = 22;
 
-  // Colonnes : Désignation | Qté | Prix unit. HT | Montant HT | TVA | Montant TTC
-  // Positions de départ des colonnes (x absolu)
-  const colDesX    = mx;
-  const colDesW    = 175;
-  const colQtyX    = colDesX + colDesW;
-  const colQtyW    = 35;
-  const colUnitX   = colQtyX + colQtyW;
-  const colUnitW   = 70;
-  const colHtX     = colUnitX + colUnitW;
-  const colHtW     = 65;
-  const colTvaX    = colHtX + colHtW;
-  const colTvaW    = 45;
-  const colTtcX    = colTvaX + colTvaW;
-  // colTtcW = reste jusqu'à width - mx
-  const colTtcW    = (width - mx) - colTtcX;
+  // Colonnes (positions x absolues, largeurs)
+  //   Désignation | Quantité | Prix unit. HT | Montant HT | TVA | Montant TTC
+  const colDesX   = mx;
+  const colDesW   = 170;
+  const colQtyX   = colDesX + colDesW;
+  const colQtyW   = 38;
+  const colUnitX  = colQtyX + colQtyW;
+  const colUnitW  = 75;
+  const colHtX    = colUnitX + colUnitW;
+  const colHtW    = 70;
+  const colTvaX   = colHtX + colHtW;
+  const colTvaW   = 40;
+  const colTtcX   = colTvaX + colTvaW;
+  const colTtcW   = (width - mx) - colTtcX;
 
-  fillRect(mx, y, tableW, headerH, headerClr);
-  const hy = y + 14;
-  txt("Designation",      colDesX  + 4, hy, { font: fontBold, size: 8, color: white });
-  txt("Qte",              colQtyX,      hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colQtyW - 4 });
-  txt("Prix unit. HT",    colUnitX,     hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colUnitW - 4 });
-  txt("Montant HT",       colHtX,       hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colHtW - 4 });
-  txt("TVA",              colTvaX,      hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colTvaW - 4 });
-  txt("Montant TTC",      colTtcX,      hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colTtcW - 4 });
+  // Fond doré/olive en-tête
+  fillRect(mx, y, tableW, headerH, golden);
+
+  const hy = y + 15;
+  txt("Designation",    colDesX  + 5, hy, { font: fontBold, size: 8, color: white });
+  txt("Quantite",       colQtyX,      hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colQtyW - 4 });
+  txt("Prix unit. HT",  colUnitX,     hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colUnitW - 4 });
+  txt("Montant HT",     colHtX,       hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colHtW - 4 });
+  txt("TVA",            colTvaX,      hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colTvaW - 4 });
+  txt("Montant TTC",    colTtcX,      hy, { font: fontBold, size: 8, color: white, alignRight: true, maxWidth: colTtcW - 4 });
   y += headerH;
 
+  // Bordure basse de l'en-tête
+  hLine(y, mx, width - mx, golden, 1);
+
   // ── Lignes groupées par logement ──────────────────────────────────────────
-  const groups = groupLinesByLogement(invoice.lines);
-  let rowIdx   = 0;
+  const groups  = groupLinesByLogement(invoice.lines);
+  let   rowIdx  = 0;
+
+  // Pour recalculer les totaux réels depuis les lignes
+  let grandTotalHT  = 0;
 
   for (const g of groups) {
-    // Titre de section : nom du logement en gras
-    const sectionH = 16;
-    fillRect(mx, y, tableW, sectionH, rgb(0.93, 0.91, 0.85)); // fond beige clair
-    const sy = y + 11;
-    txt(g.logementName, colDesX + 4, sy, { font: fontBold, size: 9, color: darkTeal });
+    // ── Titre de section logement ───────────────────────────────────────────
+    const sectionH = 17;
+    fillRect(mx, y, tableW, sectionH, sectionBg);
+    txt(g.logementName, colDesX + 5, y + 12, {
+      font: fontBold, size: 9, color: darkTeal,
+    });
     y += sectionH;
 
-    // Ligne interventions (ménage) : toutes les dates sur une ligne
+    // ── Ligne interventions ménage ──────────────────────────────────────────
     if (g.menageCount > 0) {
-      const rowH = 15;
+      const rowH = 16;
       if (rowIdx % 2 === 0) fillRect(mx, y, tableW, rowH, stripeClr);
 
-      const datesStr  = `Intervention : ${g.menageDates.join(" - ")}`;
-      const priceHT   = g.menageUnitPrice;
-      const montantHT = priceHT * g.menageCount;
-      const tvaAmt    = montantHT * TVA_RATE;
-      const montantTTC = montantHT + tvaAmt;
-
-      // Tronquer si trop long
-      let desc = datesStr;
-      const maxDescPx = colDesW - 8;
-      while (desc.length > 6 && fontRegular.widthOfTextAtSize(desc, 8) > maxDescPx) {
-        desc = desc.slice(0, -1);
-      }
-      if (desc.length < datesStr.length) desc = desc.slice(0, -3) + "...";
-
-      const ly = y + 10;
-      txt(desc,                        colDesX  + 4,  ly, { size: 8 });
-      txt(String(g.menageCount),       colQtyX,       ly, { size: 8, alignRight: true, maxWidth: colQtyW - 4 });
-      txt(formatPrix(priceHT),         colUnitX,      ly, { size: 8, alignRight: true, maxWidth: colUnitW - 4 });
-      txt(formatPrix(montantHT),       colHtX,        ly, { size: 8, alignRight: true, maxWidth: colHtW - 4 });
-      txt("20%",                        colTvaX,       ly, { size: 8, alignRight: true, maxWidth: colTvaW - 4 });
-      txt(formatPrix(montantTTC),      colTtcX,       ly, { size: 8, alignRight: true, maxWidth: colTtcW - 4 });
-      y += rowH;
-      rowIdx++;
-    }
-
-    // Ligne blanchisserie si présente
-    if (g.blanchisserie) {
-      const rowH = 15;
-      if (rowIdx % 2 === 0) fillRect(mx, y, tableW, rowH, stripeClr);
-
-      const priceHT    = g.blanchisserie.unitPrice;
-      const qty        = g.blanchisserie.quantity;
-      const montantHT  = priceHT * qty;
+      const montantHT  = g.menageUnitHT * g.menageCount;
       const tvaAmt     = montantHT * TVA_RATE;
       const montantTTC = montantHT + tvaAmt;
+      grandTotalHT    += montantHT;
 
-      const ly = y + 10;
-      txt(g.blanchisserie.description, colDesX  + 4,  ly, { size: 8 });
-      txt(String(qty),                  colQtyX,       ly, { size: 8, alignRight: true, maxWidth: colQtyW - 4 });
-      txt(formatPrix(priceHT),          colUnitX,      ly, { size: 8, alignRight: true, maxWidth: colUnitW - 4 });
-      txt(formatPrix(montantHT),        colHtX,        ly, { size: 8, alignRight: true, maxWidth: colHtW - 4 });
-      txt("20%",                         colTvaX,       ly, { size: 8, alignRight: true, maxWidth: colTvaW - 4 });
-      txt(formatPrix(montantTTC),       colTtcX,       ly, { size: 8, alignRight: true, maxWidth: colTtcW - 4 });
+      // Dates agrégées : "Intervention : 10/02 - 15/02 - 22/02"
+      const rawDates  = `Intervention : ${g.menageDates.join(" - ")}`;
+      // Tronquer si trop long pour la colonne désignation
+      let datesLabel  = rawDates;
+      const maxPx     = colDesW - 10;
+      while (
+        datesLabel.length > 20 &&
+        fontRegular.widthOfTextAtSize(datesLabel, 8) > maxPx
+      ) {
+        datesLabel = datesLabel.slice(0, -1);
+      }
+      if (datesLabel.length < rawDates.length) datesLabel = datesLabel.slice(0, -3) + "...";
+
+      const ly = y + 11;
+      txt(datesLabel,                  colDesX  + 5, ly, { size: 8 });
+      txt(String(g.menageCount),       colQtyX,      ly, { size: 8, alignRight: true, maxWidth: colQtyW  - 4 });
+      txt(formatPrix(g.menageUnitHT),  colUnitX,     ly, { size: 8, alignRight: true, maxWidth: colUnitW - 4 });
+      txt(formatPrix(montantHT),       colHtX,       ly, { size: 8, alignRight: true, maxWidth: colHtW   - 4 });
+      txt("20%",                        colTvaX,      ly, { size: 8, alignRight: true, maxWidth: colTvaW  - 4 });
+      txt(formatPrix(montantTTC),      colTtcX,      ly, { size: 8, alignRight: true, maxWidth: colTtcW  - 4 });
       y += rowH;
       rowIdx++;
     }
 
-    // Saut de page de sécurité
-    if (y > height - 180) break;
+    // ── Ligne blanchisserie ─────────────────────────────────────────────────
+    if (g.blanchisserie) {
+      const rowH = 16;
+      if (rowIdx % 2 === 0) fillRect(mx, y, tableW, rowH, stripeClr);
+
+      const { unitHT, quantity } = g.blanchisserie;
+      const montantHT  = unitHT * quantity;
+      const tvaAmt     = montantHT * TVA_RATE;
+      const montantTTC = montantHT + tvaAmt;
+      grandTotalHT    += montantHT;
+
+      const ly = y + 11;
+      txt(g.blanchisserie.label,  colDesX  + 5, ly, { size: 8 });
+      txt(String(quantity),        colQtyX,      ly, { size: 8, alignRight: true, maxWidth: colQtyW  - 4 });
+      txt(formatPrix(unitHT),      colUnitX,     ly, { size: 8, alignRight: true, maxWidth: colUnitW - 4 });
+      txt(formatPrix(montantHT),   colHtX,       ly, { size: 8, alignRight: true, maxWidth: colHtW   - 4 });
+      txt("20%",                    colTvaX,      ly, { size: 8, alignRight: true, maxWidth: colTvaW  - 4 });
+      txt(formatPrix(montantTTC),  colTtcX,      ly, { size: 8, alignRight: true, maxWidth: colTtcW  - 4 });
+      y += rowH;
+      rowIdx++;
+    }
+
+    // Sécurité : ne pas dépasser le bas de page
+    if (y > height - 200) break;
   }
 
-  // Ligne fin tableau
-  y += 6;
-  hLine(y, mx, width - mx, borderClr, 0.5);
-  y += 18;
+  // Bordure basse tableau
+  hLine(y + 4, mx, width - mx, golden, 1);
+  y += 20;
 
   // ── Totaux ────────────────────────────────────────────────────────────────
-  // Recalcul propre depuis les lignes (TVA 20%)
-  const totalHT  = invoice.total_ttc / (1 + TVA_RATE);
-  const totalTVA = invoice.total_ttc - totalHT;
-  const totalTTC = invoice.total_ttc;
+  // Recalcul cohérent : on utilise grandTotalHT calculé depuis les lignes
+  const totalHT  = grandTotalHT;
+  const totalTVA = totalHT * TVA_RATE;
+  const totalTTC = totalHT + totalTVA;
 
-  const totBlockX = width - mx - 200;
-  const totBlockW = 200;
+  const totX  = width - mx - 210;
+  const totW  = 210;
+  const rightEdge = width - mx;
 
   // Total HT
-  txt("Total HT",         totBlockX + 4, y, { size: 9, color: muted });
-  txt(formatPrix(totalHT), totBlockX, y,   { size: 9, alignRight: true, maxWidth: totBlockW - 4 });
-  y += 14;
+  txt("Total HT",        totX,         y, { size: 9, color: muted });
+  txt(formatPrix(totalHT), totX,       y, { size: 9, alignRight: true, maxWidth: totW - 4 });
+  y += 15;
 
   // TVA 20%
-  txt("TVA 20%",           totBlockX + 4, y, { size: 9, color: muted });
-  txt(formatPrix(totalTVA), totBlockX, y,  { size: 9, alignRight: true, maxWidth: totBlockW - 4 });
-  y += 14;
+  txt("TVA 20%",         totX,         y, { size: 9, color: muted });
+  txt(formatPrix(totalTVA), totX,      y, { size: 9, alignRight: true, maxWidth: totW - 4 });
+  y += 15;
 
-  hLine(y, totBlockX, width - mx, borderClr, 0.5);
-  y += 6;
+  hLine(y, totX, rightEdge, golden, 1);
+  y += 5;
 
-  // Total TTC en gras + fond doré léger
-  const ttcH = 22;
-  fillRect(totBlockX, y, totBlockW, ttcH, rgb(0.97, 0.95, 0.88));
-  const ttcY = y + 15;
-  txt("Total TTC",           totBlockX + 6, ttcY, { font: fontBold, size: 10, color: totalClr });
-  txt(formatPrix(totalTTC),  totBlockX, ttcY,     { font: fontBold, size: 10, color: totalClr, alignRight: true, maxWidth: totBlockW - 6 });
-  y += ttcH + 30;
+  // Total TTC en gras — fond beige/doré
+  const ttcH = 24;
+  fillRect(totX, y, totW, ttcH, beigeClr);
+  const ttcY = y + 17;
+  txt("Total TTC",           totX + 6,  ttcY, { font: fontBold, size: 11, color: golden });
+  txt(formatPrix(totalTTC),  totX,      ttcY, { font: fontBold, size: 11, color: golden, alignRight: true, maxWidth: totW - 6 });
 
-  // ── Mentions légales ──────────────────────────────────────────────────────
-  const footerY = 820;
-  hLine(footerY - 14, mx, width - mx, borderClr, 0.5);
+  // ── Pied de page ──────────────────────────────────────────────────────────
+  const footerY = 822;
+  hLine(footerY - 16, mx, width - mx, golden, 1);
   txt(
-    `TVA 20% appliquee sur toutes les prestations. En cas de retard de paiement, ` +
-    `une penalite egale a 3 fois le taux d'interet legal sera appliquee (art. L441-10 du Code de Commerce).`,
-    mx, footerY - 2, { size: 6.5, color: muted }
+    "TVA 20% appliquee sur toutes les prestations. " +
+    "En cas de retard de paiement, une penalite egale a 3 fois le taux d interet legal sera appliquee.",
+    mx,
+    footerY - 4,
+    { size: 6.5, color: muted }
   );
   txt(
-    `Facture emise le ${formatDate(new Date().toISOString())} — ${companyName}`,
-    mx, footerY + 10, { size: 6.5, color: muted }
+    `Facture emise le ${formatDate(new Date().toISOString())}  |  ${companyName}  |  ${companyEmail}`,
+    mx,
+    footerY + 9,
+    { size: 6.5, color: muted }
   );
 
   return doc.save();
@@ -512,7 +574,7 @@ export async function POST(
       .eq("id", invoiceId);
 
     if (updateError) {
-      throw new Error(`Erreur mise à jour pdf_url : ${updateError.message}`);
+      throw new Error(`Erreur mise a jour pdf_url : ${updateError.message}`);
     }
 
     return NextResponse.json({ success: true, pdf_url: publicUrl });
