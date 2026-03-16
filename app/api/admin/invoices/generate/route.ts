@@ -172,8 +172,9 @@ export async function POST(request: NextRequest) {
 
     // 8. Générer les factures
     // Le forfait blanchisserie est facturé UNIQUEMENT sur la première période du mois (1–15)
-    const periodStart = new Date(period_start);
-    const isFirstPeriod = periodStart.getDate() === 1;
+    // On lit le jour directement depuis la chaîne ISO (ex: "2026-03-01") pour éviter tout
+    // problème de fuseau horaire avec new Date() qui parse en UTC.
+    const isFirstPeriod = parseInt(period_start.slice(8, 10), 10) === 1;
 
     const created: InvoiceRow[] = [];
     const skipped: string[] = [];        // client_ids ignorés (doublon)
