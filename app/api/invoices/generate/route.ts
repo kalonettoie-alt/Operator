@@ -131,6 +131,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Générer les factures
+    // DEBUG TEMPORAIRE — à supprimer après diagnostic
+    const isFirstPeriod = parseInt(period_start.slice(8, 10), 10) === 1;
+    console.log('[FACTURE] period_start:', period_start, 'day:', period_start.slice(8, 10), 'isFirstPeriod:', isFirstPeriod);
+
     const created: InvoiceRow[] = [];
     const skipped: string[] = [];   // client_ids ignorés (doublon)
     const errors: string[] = [];
