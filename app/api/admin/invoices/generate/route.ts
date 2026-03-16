@@ -137,15 +137,16 @@ export async function POST(request: NextRequest) {
 
     for (const [clientId, clientInterventions] of byClient.entries()) {
       // 7a. Anti-doublon : une seule facture par (client, period_start, period_end)
+      // Utiliser .limit(1) et non .maybeSingle() pour ne pas planter si doublons déjà en base
       const { data: existing } = await supabase
         .from("invoices")
-        .select("id, invoice_number")
+        .select("id")
         .eq("client_id", clientId)
         .eq("period_start", period_start)
         .eq("period_end", period_end)
-        .maybeSingle();
+        .limit(1);
 
-      if (existing) {
+      if (existing && existing.length > 0) {
         skipped.push(clientId);
         continue;
       }
@@ -217,12 +218,13 @@ export async function POST(request: NextRequest) {
         });
 
         // Ligne blanchisserie (uniquement si incluse et montant > 0)
+        // type = 'blanchisserie_intervention' (valeur attendue par la CHECK constraint)
         if (i.blanchisserie_incluse && (i.prix_blanchisserie ?? 0) > 0) {
           lines.push({
             invoice_id:      invoice.id,
             intervention_id: i.id,
             logement_id:     i.logement_id,
-            type:            "blanchisserie",
+            type:            "blanchisserie_intervention",
             description:     `Blanchisserie — ${logementName} — ${dateStr}`,
             unit_price:      i.prix_blanchisserie ?? 0,
             quantity:        1,
