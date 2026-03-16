@@ -58,7 +58,7 @@ export function useLogements(clientId?: string) {
       if (clientId) query = query.eq("client_id", clientId);
 
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as LogementWithClient[];
     },
   });
@@ -76,7 +76,7 @@ export function useCreateLogement() {
         .insert(input)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: () => {
@@ -98,7 +98,7 @@ export function useUpdateLogement() {
         .eq("id", id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: () => {
@@ -118,7 +118,7 @@ export function useDeleteLogement() {
         .from("logements")
         .delete()
         .eq("id", id);
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });

@@ -26,7 +26,7 @@ export function useClients() {
         .eq("role", USER_ROLES.CLIENT)
         .order("full_name");
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
   });
@@ -49,7 +49,7 @@ export function useProfilesByIds(ids: string[]) {
         .select("id, full_name")
         .in("id", ids);
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
   });
@@ -71,7 +71,7 @@ export function usePrestataires() {
         .eq("role", USER_ROLES.PRESTATAIRE)
         .order("full_name");
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
   });

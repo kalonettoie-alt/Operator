@@ -38,7 +38,7 @@ export function useReservationSources() {
         )
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as ReservationSourceWithLogement[];
     },
   });
@@ -60,7 +60,7 @@ export function useCreateReservationSource() {
         })
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: () => {
@@ -88,7 +88,7 @@ export function useDeleteReservationSource() {
         .from("reservation_sources")
         .delete()
         .eq("id", id);
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
@@ -109,7 +109,7 @@ export function useToggleReservationSource() {
         .eq("id", id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: () => {

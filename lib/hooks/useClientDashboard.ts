@@ -58,7 +58,7 @@ export function useClientDashboard(clientId: string | undefined) {
         .gte("date", monthStart)
         .lte("date", monthEnd)
         .order("date", { ascending: true });
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as ClientInterventionRow[];
     },
     enabled: !!clientId,
@@ -79,7 +79,7 @@ export function useClientDashboard(clientId: string | undefined) {
         .neq("status", INTERVENTION_STATUSES.ANNULEE)
         .order("date", { ascending: true })
         .limit(10);
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as ClientInterventionRow[];
     },
     enabled: !!clientId,

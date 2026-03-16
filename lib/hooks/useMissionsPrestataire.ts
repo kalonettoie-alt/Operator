@@ -176,7 +176,7 @@ export function useMissionsPrestataire(
       if (dateTo)   query = query.lte("date", dateTo);
 
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return (data ?? []) as MissionWithLogement[];
     },
   });
@@ -196,7 +196,7 @@ export function useAccepterMission() {
       const { data, error } = await supabase.rpc("accepter_intervention", {
         p_intervention_id: interventionId,
       });
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: () => {
@@ -271,7 +271,7 @@ export function useRefuserMission() {
       const { data, error } = await supabase.rpc("refuser_intervention", {
         p_intervention_id: interventionId,
       });
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: () => {
@@ -381,7 +381,7 @@ export function useMissionDetail(id: string) {
         )
         .eq("id", id)
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as MissionDetail;
     },
   });

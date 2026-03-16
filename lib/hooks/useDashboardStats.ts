@@ -66,7 +66,7 @@ export function useDashboardStats() {
         .gte("date", monthStart)
         .lte("date", monthEnd)
         .order("date", { ascending: true });
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as InterventionRow[];
     },
   });
@@ -86,7 +86,7 @@ export function useDashboardStats() {
         .eq("date", today)
         .neq("status", INTERVENTION_STATUSES.ANNULEE)
         .order("status", { ascending: true });
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as InterventionRow[];
     },
   });

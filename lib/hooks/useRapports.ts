@@ -21,7 +21,7 @@ export function useRapport(interventionId: string) {
         .select("*")
         .eq("intervention_id", interventionId)
         .maybeSingle();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     enabled: !!interventionId,

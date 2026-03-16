@@ -77,7 +77,7 @@ export function useIntervention(id: string) {
         `)
         .eq("id", id)
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as InterventionDetail;
     },
     enabled: !!id,
@@ -111,7 +111,7 @@ export function useInterventions(filters: InterventionFilters = {}) {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data as InterventionWithRelations[];
     },
   });
@@ -129,7 +129,7 @@ export function useCreateIntervention() {
         .insert(input)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: () => {
@@ -163,7 +163,7 @@ export function useAssignIntervention() {
         .eq("id", interventionId)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: (data) => {
@@ -193,7 +193,7 @@ export function useDesassignIntervention() {
         .eq("id", interventionId)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: (data) => {
@@ -230,7 +230,7 @@ export function useAnnulerIntervention() {
         .eq("id", interventionId)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: (data) => {
@@ -256,7 +256,7 @@ export function useUpdateIntervention() {
         .eq("id", id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
       return data;
     },
     onSuccess: (data) => {
@@ -284,7 +284,7 @@ export function useDeleteIntervention() {
       await supabase.from("rapports").delete().eq("intervention_id", id);
       // 3. Supprimer l'intervention
       const { error } = await supabase.from("interventions").delete().eq("id", id);
-      if (error) throw error;
+      if (error) throw new Error(error.message || JSON.stringify(error));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [QUERY_KEY], refetchType: "all" });
