@@ -6,10 +6,10 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, Download, Loader2, Send } from "lucide-react";
+import { ArrowLeft, FileText, Download, Loader2, Send, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
-import { useInvoice, useGeneratePdf, useSendInvoice } from "@/lib/hooks/useInvoices";
+import { useInvoice, useGeneratePdf, useSendInvoice, useChargeInvoice } from "@/lib/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,12 +47,13 @@ const TYPE_LABELS: Record<string, string> = {
 // ─── Badge statut ─────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  draft:     { label: "Brouillon",  className: "bg-slate-100 text-slate-700 border-slate-200" },
-  sent:      { label: "Envoyée",    className: "bg-blue-50 text-blue-700 border-blue-200" },
-  paid:      { label: "Payée",      className: "bg-green-50 text-green-700 border-green-200" },
-  overdue:   { label: "En retard",  className: "bg-orange-50 text-orange-700 border-orange-200" },
-  cancelled: { label: "Annulée",    className: "bg-slate-50 text-slate-500 border-slate-200 line-through" },
-  failed:    { label: "Échouée",    className: "bg-red-50 text-red-700 border-red-200" },
+  draft:      { label: "Brouillon",  className: "bg-slate-100 text-slate-700 border-slate-200" },
+  sent:       { label: "Envoyée",    className: "bg-blue-50 text-blue-700 border-blue-200" },
+  processing: { label: "En cours",   className: "bg-purple-50 text-purple-700 border-purple-200" },
+  paid:       { label: "Payée",      className: "bg-green-50 text-green-700 border-green-200" },
+  overdue:    { label: "En retard",  className: "bg-orange-50 text-orange-700 border-orange-200" },
+  cancelled:  { label: "Annulée",    className: "bg-slate-50 text-slate-500 border-slate-200 line-through" },
+  failed:     { label: "Échouée",    className: "bg-red-50 text-red-700 border-red-200" },
 };
 
 function InvoiceStatusBadge({ status }: { status: string }) {
@@ -75,6 +76,7 @@ export default function FactureDetailPage({
   const { data: invoice, isLoading, error } = useInvoice(id);
   const generatePdf = useGeneratePdf();
   const sendInvoice = useSendInvoice();
+  const chargeInvoice = useChargeInvoice();
 
   async function handleGeneratePdf() {
     try {
@@ -93,6 +95,16 @@ export default function FactureDetailPage({
       toast.success("Facture validée et envoyée par email au client");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de l'envoi de la facture");
+      Sentry.captureException(err);
+    }
+  }
+
+  async function handleChargeInvoice() {
+    try {
+      await chargeInvoice.mutateAsync(id);
+      toast.success("Prélèvement SEPA déclenché — le paiement sera confirmé dans 5 à 14 jours");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors du prélèvement");
       Sentry.captureException(err);
     }
   }
@@ -163,7 +175,7 @@ export default function FactureDetailPage({
             variant="outline"
             size="sm"
             onClick={handleGeneratePdf}
-            disabled={generatePdf.isPending || sendInvoice.isPending}
+            disabled={generatePdf.isPending || sendInvoice.isPending || chargeInvoice.isPending}
           >
             {generatePdf.isPending ? (
               <><Loader2 className="size-4 mr-2 animate-spin" />Génération…</>
@@ -176,13 +188,28 @@ export default function FactureDetailPage({
             <Button
               size="sm"
               onClick={handleSendInvoice}
-              disabled={sendInvoice.isPending || generatePdf.isPending}
+              disabled={sendInvoice.isPending || generatePdf.isPending || chargeInvoice.isPending}
               className="bg-amber-700 hover:bg-amber-800 text-white"
             >
               {sendInvoice.isPending ? (
                 <><Loader2 className="size-4 mr-2 animate-spin" />Envoi en cours…</>
               ) : (
                 <><Send className="size-4 mr-2" />Valider et envoyer</>
+              )}
+            </Button>
+          )}
+          {/* Bouton "Prélever" — visible uniquement sur les factures envoyées */}
+          {invoice.status === "sent" && (
+            <Button
+              size="sm"
+              onClick={handleChargeInvoice}
+              disabled={chargeInvoice.isPending || sendInvoice.isPending || generatePdf.isPending}
+              className="bg-purple-700 hover:bg-purple-800 text-white"
+            >
+              {chargeInvoice.isPending ? (
+                <><Loader2 className="size-4 mr-2 animate-spin" />Prélèvement en cours…</>
+              ) : (
+                <><CreditCard className="size-4 mr-2" />Prélever</>
               )}
             </Button>
           )}

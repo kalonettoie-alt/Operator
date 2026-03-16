@@ -142,6 +142,44 @@ export function useSendInvoice() {
   });
 }
 
+// ─── Mutation : déclencher un prélèvement SEPA pour une facture ──────────────
+
+export interface ChargeInvoiceResult {
+  success:           boolean;
+  payment_intent_id: string;
+  status:            string;
+  amount_eur:        number;
+}
+
+export function useChargeInvoice() {
+  const queryClient = useQueryClient();
+
+  return useMutation<ChargeInvoiceResult, Error, string>({
+    mutationFn: async (invoiceId: string) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Session expirée — veuillez vous reconnecter");
+
+      const response = await fetch("/api/stripe/charge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ invoice_id: invoiceId }),
+      });
+
+      const data = await response.json() as ChargeInvoiceResult & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Erreur lors du prélèvement");
+      return data;
+    },
+    onSuccess: (_, invoiceId) => {
+      // Rafraîchir la facture concernée et la liste complète
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY, invoiceId] });
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+  });
+}
+
 // ─── Mutation : générer les factures pour une période ────────────────────────
 
 export function useGenerateInvoices() {

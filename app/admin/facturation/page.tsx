@@ -6,12 +6,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Zap, ChevronLeft, ChevronRight, Send, Loader2, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { FileText, Zap, ChevronLeft, ChevronRight, Send, Loader2, CheckCircle2, XCircle, AlertCircle, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
-import { useInvoices, useGenerateInvoices, useSendInvoice } from "@/lib/hooks/useInvoices";
+import { useInvoices, useGenerateInvoices, useSendInvoice, useChargeInvoice } from "@/lib/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -53,12 +53,13 @@ function toIsoDate(year: number, month: number, day: number): string {
 // ─── Badge statut facture ─────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  draft:     { label: "Brouillon",  className: "bg-slate-100 text-slate-700 border-slate-200" },
-  sent:      { label: "Envoyée",    className: "bg-blue-50 text-blue-700 border-blue-200" },
-  paid:      { label: "Payée",      className: "bg-green-50 text-green-700 border-green-200" },
-  overdue:   { label: "En retard",  className: "bg-orange-50 text-orange-700 border-orange-200" },
-  cancelled: { label: "Annulée",    className: "bg-slate-50 text-slate-500 border-slate-200 line-through" },
-  failed:    { label: "Échouée",    className: "bg-red-50 text-red-700 border-red-200" },
+  draft:      { label: "Brouillon",   className: "bg-slate-100 text-slate-700 border-slate-200" },
+  sent:       { label: "Envoyée",     className: "bg-blue-50 text-blue-700 border-blue-200" },
+  processing: { label: "En cours",    className: "bg-purple-50 text-purple-700 border-purple-200" },
+  paid:       { label: "Payée",       className: "bg-green-50 text-green-700 border-green-200" },
+  overdue:    { label: "En retard",   className: "bg-orange-50 text-orange-700 border-orange-200" },
+  cancelled:  { label: "Annulée",     className: "bg-slate-50 text-slate-500 border-slate-200 line-through" },
+  failed:     { label: "Échouée",     className: "bg-red-50 text-red-700 border-red-200" },
 };
 
 // ─── Indicateur statut Stripe ─────────────────────────────────────────────────
@@ -290,6 +291,7 @@ export default function FacturationPage() {
   const { data: invoices, isLoading, error } = useInvoices();
   const generateMutation = useGenerateInvoices();
   const sendMutation = useSendInvoice();
+  const chargeMutation = useChargeInvoice();
 
   async function handleSendInvoice(e: React.MouseEvent, invoiceId: string) {
     // Empêche le clic de propager vers la ligne (navigation)
@@ -299,6 +301,18 @@ export default function FacturationPage() {
       toast.success("Facture envoyée par email au client");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de l'envoi");
+      Sentry.captureException(err);
+    }
+  }
+
+  async function handleChargeInvoice(e: React.MouseEvent, invoiceId: string) {
+    // Empêche le clic de propager vers la ligne (navigation)
+    e.stopPropagation();
+    try {
+      await chargeMutation.mutateAsync(invoiceId);
+      toast.success("Prélèvement SEPA déclenché — le paiement sera confirmé dans 5 à 14 jours");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors du prélèvement");
       Sentry.captureException(err);
     }
   }
@@ -468,24 +482,44 @@ export default function FacturationPage() {
                     <TableCell>
                       <InvoiceStatusBadge status={invoice.status} />
                     </TableCell>
-                    {/* Bouton envoi rapide — uniquement sur les brouillons */}
+                    {/* Actions rapides par statut */}
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      {invoice.status === "draft" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-amber-700 border-amber-300 hover:bg-amber-50"
-                          onClick={(e) => handleSendInvoice(e, invoice.id)}
-                          disabled={sendMutation.isPending}
-                          title="Valider et envoyer par email"
-                        >
-                          {sendMutation.isPending ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Send className="size-3.5" />
-                          )}
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {/* Envoi rapide — brouillons uniquement */}
+                        {invoice.status === "draft" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                            onClick={(e) => handleSendInvoice(e, invoice.id)}
+                            disabled={sendMutation.isPending || chargeMutation.isPending}
+                            title="Valider et envoyer par email"
+                          >
+                            {sendMutation.isPending ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Send className="size-3.5" />
+                            )}
+                          </Button>
+                        )}
+                        {/* Prélever — factures envoyées uniquement */}
+                        {invoice.status === "sent" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-purple-700 border-purple-300 hover:bg-purple-50"
+                            onClick={(e) => handleChargeInvoice(e, invoice.id)}
+                            disabled={chargeMutation.isPending || sendMutation.isPending}
+                            title="Déclencher le prélèvement SEPA"
+                          >
+                            {chargeMutation.isPending ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <CreditCard className="size-3.5" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
