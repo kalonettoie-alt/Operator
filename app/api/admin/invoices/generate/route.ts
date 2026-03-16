@@ -177,8 +177,7 @@ export async function POST(request: NextRequest) {
     const isFirstPeriod = parseInt(period_start.slice(8, 10), 10) === 1;
 
     // DEBUG TEMPORAIRE — à supprimer après diagnostic
-    console.log('[FACTURE] period_start raw:', period_start, 'type:', typeof period_start);
-    console.log('[FACTURE] isFirstPeriod:', isFirstPeriod);
+    console.log('[FACTURE] period_start:', period_start, 'day:', period_start.slice(8, 10), 'isFirstPeriod:', isFirstPeriod);
 
     const created: InvoiceRow[] = [];
     const skipped: string[] = [];        // client_ids ignorés (doublon)
