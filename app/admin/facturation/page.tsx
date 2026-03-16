@@ -6,9 +6,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Zap, ChevronLeft, ChevronRight, Send, Loader2 } from "lucide-react";
+import { FileText, Zap, ChevronLeft, ChevronRight, Send, Loader2, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import * as Sentry from "@sentry/nextjs";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase/client";
 import { useInvoices, useGenerateInvoices, useSendInvoice } from "@/lib/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +60,77 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   cancelled: { label: "Annulée",    className: "bg-slate-50 text-slate-500 border-slate-200 line-through" },
   failed:    { label: "Échouée",    className: "bg-red-50 text-red-700 border-red-200" },
 };
+
+// ─── Indicateur statut Stripe ─────────────────────────────────────────────────
+
+interface StripeStatus {
+  connected:   boolean;
+  mode?:       "test" | "live";
+  account_id?: string;
+  sepa_enabled?: boolean;
+}
+
+function useStripeStatus() {
+  return useQuery<StripeStatus>({
+    queryKey: ["stripe-status"],
+    // Vérifier une fois au chargement, pas besoin de re-fetch automatique
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Non authentifié");
+
+      const res = await fetch("/api/stripe/test", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json() as StripeStatus & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Erreur Stripe");
+      return data;
+    },
+  });
+}
+
+function StripeStatusIndicator() {
+  const { data, isLoading, error } = useStripeStatus();
+
+  if (isLoading) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="size-3 animate-spin" />
+        Vérification Stripe…
+      </span>
+    );
+  }
+
+  if (error || !data?.connected) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-red-600 font-medium">
+        <XCircle className="size-4" />
+        Stripe non connecté
+      </span>
+    );
+  }
+
+  const isTest = data.mode === "test";
+  return (
+    <span className={`flex items-center gap-1.5 text-xs font-medium ${isTest ? "text-amber-600" : "text-green-600"}`}>
+      {isTest
+        ? <AlertCircle className="size-4" />
+        : <CheckCircle2 className="size-4" />}
+      Stripe connecté
+      <Badge
+        variant="outline"
+        className={`text-[10px] px-1.5 py-0 h-4 ${
+          isTest
+            ? "border-amber-300 text-amber-600 bg-amber-50"
+            : "border-green-300 text-green-600 bg-green-50"
+        }`}
+      >
+        {isTest ? "TEST" : "LIVE"}
+      </Badge>
+    </span>
+  );
+}
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   const config = STATUS_CONFIG[status] ?? { label: status, className: "bg-slate-100 text-slate-600" };
@@ -265,11 +338,14 @@ export default function FacturationPage() {
   return (
     <div className="p-6 space-y-6 max-w-6xl">
       {/* En-tête */}
-      <div>
-        <h1 className="text-2xl font-semibold">Facturation</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Générez les factures clients pour une période donnée, puis suivez leur statut.
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold">Facturation</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Générez les factures clients pour une période donnée, puis suivez leur statut.
+          </p>
+        </div>
+        <StripeStatusIndicator />
       </div>
 
       {/* Carte génération */}
