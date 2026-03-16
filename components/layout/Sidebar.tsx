@@ -20,6 +20,7 @@ import {
   Building2,
   ClipboardList,
   CalendarDays,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/enums";
@@ -43,6 +44,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: "Interventions",  href: "/admin/interventions",     icon: Wrench          },
     { label: "Calendrier",     href: "/admin/calendrier",        icon: Calendar        },
     { label: "Historique",     href: "/admin/historique",        icon: History         },
+    { label: "Facturation",    href: "/admin/facturation",       icon: FileText        },
     { label: "Estimations",    href: "/admin/estimations",       icon: Calculator      },
     { label: "Simulations",   href: "/admin/simulations",        icon: BarChart2       },
     { label: "Sources iCal",  href: "/admin/reservations",       icon: Rss             },

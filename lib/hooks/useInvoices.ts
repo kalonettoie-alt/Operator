@@ -69,7 +69,7 @@ export function useGenerateInvoices() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Session expirée — veuillez vous reconnecter");
 
-      const response = await fetch("/api/admin/invoices/generate", {
+      const response = await fetch("/api/invoices/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
