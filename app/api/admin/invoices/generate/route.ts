@@ -4,12 +4,15 @@
 // Sécurisée par token Supabase Bearer + vérification du rôle admin.
 //
 // LOGIQUE DE FACTURATION :
-// Pour chaque client ayant des interventions terminées dans la période :
+// Pour chaque client ayant des interventions terminées OU des logements en forfait blanchisserie :
 //   1. Vérifie qu'aucune facture n'existe déjà (client × période) → anti-doublon
 //   2. Crée la facture en statut "draft"
 //   3. Crée une invoice_line par intervention (type="menage")
-//   4. Si blanchisserie_incluse, ajoute une invoice_line supplémentaire (type="blanchisserie")
-//   5. total_ttc = total_menage + total_blanchisserie
+//   4. Si logement.type_blanchisserie = 'intervention' ET intervention.blanchisserie_incluse :
+//      → une invoice_line de type "blanchisserie_intervention" par intervention concernée
+//   5. Si logement.type_blanchisserie = 'forfait' :
+//      → UNE invoice_line de type "blanchisserie_forfait" par logement (même sans intervention)
+//   6. total_ttc = total_menage + total_blanchisserie
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
@@ -27,7 +30,20 @@ interface InterventionForInvoice {
   prix_client_ttc: number | null;
   prix_blanchisserie: number | null;
   blanchisserie_incluse: boolean | null;
-  logement: { id: string; name: string } | null;
+  logement: {
+    id: string;
+    name: string;
+    type_blanchisserie: string | null;
+  } | null;
+}
+
+// Type des logements en forfait blanchisserie
+interface ForfaitLogement {
+  id: string;
+  name: string;
+  client_id: string | null;
+  prix_blanchisserie: number | null;
+  type_blanchisserie: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -75,6 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Récupérer toutes les interventions terminées de la période
+    //    On récupère aussi type_blanchisserie du logement pour savoir comment facturer
     const { data: rawInterventions, error: interErr } = await supabase
       .from("interventions")
       .select(`
@@ -85,7 +102,7 @@ export async function POST(request: NextRequest) {
         prix_client_ttc,
         prix_blanchisserie,
         blanchisserie_incluse,
-        logement:logements!interventions_logement_id_fkey(id, name)
+        logement:logements!interventions_logement_id_fkey(id, name, type_blanchisserie)
       `)
       .eq("status", "terminee")
       .gte("date", period_start)
@@ -96,16 +113,6 @@ export async function POST(request: NextRequest) {
 
     const interventions = (rawInterventions ?? []) as unknown as InterventionForInvoice[];
 
-    if (interventions.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: "Aucune intervention terminée sur cette période",
-        created: 0,
-        skipped: 0,
-        invoices: [],
-      });
-    }
-
     // 5. Grouper les interventions par client
     const byClient = new Map<string, InterventionForInvoice[]>();
     for (const i of interventions) {
@@ -114,7 +121,40 @@ export async function POST(request: NextRequest) {
       byClient.set(i.client_id, list);
     }
 
-    // 6. Calculer le prochain numéro séquentiel de l'année (FAC-YYYY-NNN)
+    // 6. Récupérer tous les logements en forfait blanchisserie (toutes périodes confondues)
+    //    Ces logements doivent être facturés même s'ils n'ont eu aucune intervention ce mois-ci
+    const { data: rawForfait, error: forfaitErr } = await supabase
+      .from("logements")
+      .select("id, name, client_id, prix_blanchisserie, type_blanchisserie")
+      .eq("type_blanchisserie", "forfait");
+
+    if (forfaitErr) throw new Error(forfaitErr.message);
+
+    const forfaitLogements = (rawForfait ?? []) as ForfaitLogement[];
+
+    // Grouper les logements forfait par client
+    const forfaitByClient = new Map<string, ForfaitLogement[]>();
+    for (const l of forfaitLogements) {
+      if (!l.client_id) continue;
+      const list = forfaitByClient.get(l.client_id) ?? [];
+      list.push(l);
+      forfaitByClient.set(l.client_id, list);
+    }
+
+    // Union de tous les clients à facturer (interventions + forfait)
+    const allClientIds = new Set([...byClient.keys(), ...forfaitByClient.keys()]);
+
+    if (allClientIds.size === 0) {
+      return NextResponse.json({
+        success: true,
+        message: "Aucune intervention terminée ni logement forfait sur cette période",
+        created: 0,
+        skipped: 0,
+        invoices: [],
+      });
+    }
+
+    // 7. Calculer le prochain numéro séquentiel de l'année (FAC-YYYY-NNN)
     const year = new Date(period_start).getFullYear();
     const { data: lastInvoice } = await supabase
       .from("invoices")
@@ -130,14 +170,16 @@ export async function POST(request: NextRequest) {
       if (!isNaN(lastSeq)) nextSeq = lastSeq + 1;
     }
 
-    // 7. Générer les factures
+    // 8. Générer les factures
     const created: InvoiceRow[] = [];
     const skipped: string[] = [];        // client_ids ignorés (doublon)
     const errors: string[] = [];
 
-    for (const [clientId, clientInterventions] of byClient.entries()) {
-      // 7a. Anti-doublon : une seule facture par (client, period_start, period_end)
-      // Utiliser .limit(1) et non .maybeSingle() pour ne pas planter si doublons déjà en base
+    for (const clientId of allClientIds) {
+      const clientInterventions = byClient.get(clientId) ?? [];
+      const clientForfaits = forfaitByClient.get(clientId) ?? [];
+
+      // 8a. Anti-doublon : une seule facture par (client, period_start, period_end)
       const { data: existing } = await supabase
         .from("invoices")
         .select("id")
@@ -151,16 +193,26 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // 7b. Calculer les totaux de la facture
+      // 8b. Calculer les totaux de la facture
       let totalMenage = 0;
       let totalBlanchisserie = 0;
 
+      // Ménage + blanchisserie à l'intervention
       for (const i of clientInterventions) {
-        totalMenage        += i.prix_client_ttc ?? 0;
-        if (i.blanchisserie_incluse) {
+        totalMenage += i.prix_client_ttc ?? 0;
+        if (
+          i.blanchisserie_incluse &&
+          i.logement?.type_blanchisserie === "intervention"
+        ) {
           totalBlanchisserie += i.prix_blanchisserie ?? 0;
         }
       }
+
+      // Blanchisserie forfait : une ligne par logement, montant du logement
+      for (const l of clientForfaits) {
+        totalBlanchisserie += l.prix_blanchisserie ?? 0;
+      }
+
       const totalTtc = totalMenage + totalBlanchisserie;
 
       // Date d'échéance : 30 jours après la fin de la période
@@ -168,7 +220,7 @@ export async function POST(request: NextRequest) {
       dueDate.setDate(dueDate.getDate() + 30);
       const dueDateStr = dueDate.toISOString().slice(0, 10);
 
-      // 7c. Créer la facture
+      // 8c. Créer la facture
       const invoiceNumber = `FAC-${year}-${String(nextSeq).padStart(3, "0")}`;
 
       const { data: invoice, error: invoiceErr } = await supabase
@@ -196,7 +248,7 @@ export async function POST(request: NextRequest) {
 
       nextSeq++;
 
-      // 7d. Créer les lignes de facture
+      // 8d. Créer les lignes de facture
       const lines: Database["public"]["Tables"]["invoice_lines"]["Insert"][] = [];
 
       for (const i of clientInterventions) {
@@ -217,9 +269,13 @@ export async function POST(request: NextRequest) {
           total:           i.prix_client_ttc ?? 0,
         });
 
-        // Ligne blanchisserie (uniquement si incluse et montant > 0)
-        // type = 'blanchisserie_intervention' (valeur attendue par la CHECK constraint)
-        if (i.blanchisserie_incluse && (i.prix_blanchisserie ?? 0) > 0) {
+        // Ligne blanchisserie à l'intervention
+        // Uniquement si le logement est en mode 'intervention' ET blanchisserie_incluse = true
+        if (
+          i.blanchisserie_incluse &&
+          i.logement?.type_blanchisserie === "intervention" &&
+          (i.prix_blanchisserie ?? 0) > 0
+        ) {
           lines.push({
             invoice_id:      invoice.id,
             intervention_id: i.id,
@@ -229,6 +285,22 @@ export async function POST(request: NextRequest) {
             unit_price:      i.prix_blanchisserie ?? 0,
             quantity:        1,
             total:           i.prix_blanchisserie ?? 0,
+          });
+        }
+      }
+
+      // Lignes blanchisserie forfait : UNE ligne par logement, indépendamment des interventions
+      for (const l of clientForfaits) {
+        if ((l.prix_blanchisserie ?? 0) > 0) {
+          lines.push({
+            invoice_id:      invoice.id,
+            intervention_id: null,
+            logement_id:     l.id,
+            type:            "blanchisserie_forfait",
+            description:     `Blanchisserie forfait — ${l.name}`,
+            unit_price:      l.prix_blanchisserie ?? 0,
+            quantity:        1,
+            total:           l.prix_blanchisserie ?? 0,
           });
         }
       }
