@@ -125,6 +125,11 @@ export async function POST(request: NextRequest) {
     // Le montant est en centimes (Stripe attend des entiers)
     const montantCentimes = Math.round(montantTtc * 100);
 
+    console.log('[STRIPE] charge attempt - invoice:', invoice_id, 'amount:', montantCentimes, 'customer:', clientProfile.stripe_customer_id);
+    console.log('[STRIPE] payment method:', paymentMethodId);
+    console.log('[STRIPE] mandate:', clientProfile.sepa_mandate_id);
+    console.log('[STRIPE] all payment methods:', JSON.stringify(paymentMethods.data.map(pm => ({ id: pm.id, type: pm.type }))));
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount:               montantCentimes,
       currency:             "eur",
@@ -145,6 +150,8 @@ export async function POST(request: NextRequest) {
     });
 
     // ── 7. Mettre à jour la facture en DB ──────────────────────────────────────
+    console.log('[STRIPE] result:', JSON.stringify({ id: paymentIntent.id, status: paymentIntent.status, amount: paymentIntent.amount }));
+
     const { error: updateErr } = await supabase
       .from("invoices")
       .update({
@@ -177,6 +184,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
+    console.log('[STRIPE] error:', JSON.stringify(error instanceof Error ? { message: error.message, name: error.name, stack: error.stack } : error));
     Sentry.captureException(error);
     // Erreur Stripe explicite (ex : mandat expiré, solde insuffisant)
     const message = error instanceof Error ? error.message : "Erreur interne";
