@@ -3,6 +3,7 @@
 // Header — barre supérieure fixe (visible sur tous les écrans).
 // Affiche le logo, le nom de l'utilisateur connecté et le bouton de déconnexion.
 
+import Image from "next/image";
 import { LogOut } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,14 @@ export function Header() {
     <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-20 flex items-center justify-between px-4 md:px-6">
       {/* Logo */}
       <div className="flex items-center gap-2">
-        <span className="font-bold text-lg text-gray-900">Deltom</span>
+        <Image
+          src="/logo-deltom.png"
+          alt="Deltom"
+          height={40}
+          width={40}
+          className="object-contain"
+          priority
+        />
         <span className="text-xs font-medium text-gray-400 hidden sm:block">
           Operator V3
         </span>
