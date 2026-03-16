@@ -176,6 +176,10 @@ export async function POST(request: NextRequest) {
     // problème de fuseau horaire avec new Date() qui parse en UTC.
     const isFirstPeriod = parseInt(period_start.slice(8, 10), 10) === 1;
 
+    // DEBUG TEMPORAIRE — à supprimer après diagnostic
+    console.log('[FACTURE] period_start raw:', period_start, 'type:', typeof period_start);
+    console.log('[FACTURE] isFirstPeriod:', isFirstPeriod);
+
     const created: InvoiceRow[] = [];
     const skipped: string[] = [];        // client_ids ignorés (doublon)
     const errors: string[] = [];
@@ -214,6 +218,9 @@ export async function POST(request: NextRequest) {
       }
 
       // Blanchisserie forfait : une ligne par logement, uniquement sur la 1re période (day=1)
+      // DEBUG TEMPORAIRE — à supprimer après diagnostic
+      console.log('[FACTURE] forfait logements trouvés:', clientForfaits.length);
+      clientForfaits.forEach(l => console.log('[FACTURE] forfait:', l.name, l.prix_blanchisserie));
       if (isFirstPeriod) {
         for (const l of clientForfaits) {
           totalBlanchisserie += l.prix_blanchisserie ?? 0;
