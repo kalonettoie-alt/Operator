@@ -21,6 +21,7 @@ import {
   ClipboardList,
   CalendarDays,
   FileText,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/enums";
@@ -55,6 +56,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
     { label: "Interventions",  href: "/client/interventions",    icon: Wrench          },
     { label: "Calendrier",     href: "/client/calendrier",       icon: Calendar        },
     { label: "Historique",     href: "/client/historique",       icon: History         },
+    { label: "Factures",       href: "/client/factures",         icon: Receipt         },
   ],
   prestataire: [
     { label: "Dashboard",      href: "/prestataire",             icon: LayoutDashboard },
