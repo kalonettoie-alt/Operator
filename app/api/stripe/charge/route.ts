@@ -139,8 +139,7 @@ export async function POST(request: NextRequest) {
       // Confirmation immédiate (off_session = sans interaction du client)
       confirm:              true,
       off_session:          true,
-      // Mandat SEPA associé
-      mandate:              clientProfile.sepa_mandate_id,
+      // Note : mandate retiré — Stripe le déduit automatiquement depuis le payment_method SEPA
       description:          `Facture ${invoice.invoice_number}`,
       metadata: {
         invoice_id:       invoice.id,
