@@ -1,5 +1,5 @@
 // app/api/cron/generate-invoices/route.ts
-// Route cron — génère automatiquement les factures draft selon la date du jour.
+// Route cron — génère automatiquement les factures et les envoie aux clients.
 // Appelée par pg_cron le 1er et le 16 de chaque mois.
 // Sécurisée par CRON_SECRET (pas de token utilisateur).
 //
@@ -7,10 +7,21 @@
 //   Si on est le 1er  → période couverte = du 16 au dernier jour du mois précédent
 //   Si on est le 16   → période couverte = du 1er au 15 du mois en cours
 //
-// La logique de facturation est identique à /api/invoices/generate.
+// WORKFLOW COMPLET (full auto) :
+//   1. Générer les factures en statut "draft"
+//   2. Générer le PDF de chaque facture
+//   3. Envoyer l'email au client avec le PDF
+//   4. Passer le statut à "sent" (sent_at + due_date = period_end + 5 jours)
+//
+// Le bouton "Générer les factures" dans l'interface admin reste en mode draft
+// uniquement — l'admin peut vérifier avant d'envoyer manuellement.
 
 import { NextRequest, NextResponse } from "next/server";
+import { Resend } from "resend";
 import { createServerClient } from "@/lib/supabase/server";
+import { buildPdf } from "@/lib/invoices/pdf";
+import type { InvoiceWithDetails } from "@/lib/invoices/pdf";
+import { buildEmailHtml, computeDueDate } from "@/lib/invoices/email";
 import * as Sentry from "@sentry/nextjs";
 import type { Database } from "@/types/database";
 
@@ -42,7 +53,7 @@ interface ForfaitLogement {
 // Calcule la période à facturer selon le jour du mois passé en paramètre.
 // Retourne null si le jour n'est ni 1 ni 16.
 function computePeriod(today: Date): { period_start: string; period_end: string } | null {
-  // On lit jour/mois/année depuis les composantes locales UTC pour éviter
+  // On lit jour/mois/année depuis les composantes UTC pour éviter
   // les décalages de fuseau horaire (le cron tourne en UTC sur le serveur).
   const day   = today.getUTCDate();
   const month = today.getUTCMonth(); // 0-indexé
@@ -54,8 +65,7 @@ function computePeriod(today: Date): { period_start: string; period_end: string 
     // Période = 16 au dernier jour du mois précédent
     const prevMonth = month === 0 ? 11 : month - 1;
     const prevYear  = month === 0 ? year - 1 : year;
-    // Dernier jour du mois précédent : le jour 0 du mois courant
-    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const lastDay   = new Date(Date.UTC(year, month, 0)).getUTCDate();
     return {
       period_start: `${prevYear}-${pad(prevMonth + 1)}-16`,
       period_end:   `${prevYear}-${pad(prevMonth + 1)}-${pad(lastDay)}`,
@@ -113,10 +123,10 @@ export async function POST(request: NextRequest) {
       return { period_start: `${y}-${m}-01`, period_end: `${y}-${m}-15` };
     })();
 
-    // 3. Client Supabase serveur (service_role)
+    // 4. Client Supabase serveur (service_role)
     const supabase = createServerClient();
 
-    // 4. Récupérer toutes les interventions terminées de la période
+    // 5. Récupérer toutes les interventions terminées de la période
     const { data: rawInterventions, error: interErr } = await supabase
       .from("interventions")
       .select(`
@@ -138,7 +148,7 @@ export async function POST(request: NextRequest) {
 
     const interventions = (rawInterventions ?? []) as unknown as InterventionForInvoice[];
 
-    // 5. Grouper les interventions par client
+    // 6. Grouper les interventions par client
     const byClient = new Map<string, InterventionForInvoice[]>();
     for (const i of interventions) {
       const list = byClient.get(i.client_id) ?? [];
@@ -146,7 +156,7 @@ export async function POST(request: NextRequest) {
       byClient.set(i.client_id, list);
     }
 
-    // 6. Récupérer tous les logements en forfait blanchisserie
+    // 7. Récupérer tous les logements en forfait blanchisserie
     const { data: rawForfait, error: forfaitErr } = await supabase
       .from("logements")
       .select("id, name, client_id, prix_blanchisserie, type_blanchisserie")
@@ -179,7 +189,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 7. Calculer le prochain numéro séquentiel (FAC-YYYY-NNN)
+    // 8. Calculer le prochain numéro séquentiel (FAC-YYYY-NNN)
     const year = parseInt(period_start.slice(0, 4), 10);
     const { data: lastInvoice } = await supabase
       .from("invoices")
@@ -195,20 +205,28 @@ export async function POST(request: NextRequest) {
       if (!isNaN(lastSeq)) nextSeq = lastSeq + 1;
     }
 
-    // 8. Générer les factures
+    // 9. Préparer Resend (email)
+    const resendKey = process.env.RESEND_API_KEY;
+    const companyName  = process.env.COMPANY_NAME  ?? "Deltom";
+    const companyEmail = process.env.COMPANY_EMAIL ?? "";
+    const companyPhone = process.env.COMPANY_PHONE ?? "";
+    const fromEmail    = process.env.RESEND_FROM_EMAIL
+      ? `${companyName} <${process.env.RESEND_FROM_EMAIL}>`
+      : `${companyName} <onboarding@resend.dev>`;
+
     // Le forfait blanchisserie est facturé UNIQUEMENT sur la première période (day = 1).
     // On lit le jour directement depuis la chaîne ISO pour éviter tout problème de fuseau.
     const isFirstPeriod = parseInt(period_start.slice(8, 10), 10) === 1;
 
     const created: InvoiceRow[] = [];
     const skipped: string[] = [];
-    const errors: string[] = [];
+    const errors: string[]  = [];
 
     for (const clientId of allClientIds) {
       const clientInterventions = byClient.get(clientId) ?? [];
-      const clientForfaits = forfaitByClient.get(clientId) ?? [];
+      const clientForfaits      = forfaitByClient.get(clientId) ?? [];
 
-      // Anti-doublon : une seule facture par (client, period_start, period_end)
+      // ── PHASE 1 : Anti-doublon ─────────────────────────────────────────────
       const { data: existing } = await supabase
         .from("invoices")
         .select("id")
@@ -222,16 +240,13 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Calculer les totaux
+      // ── PHASE 1 : Calcul des totaux ────────────────────────────────────────
       let totalMenage = 0;
       let totalBlanchisserie = 0;
 
       for (const i of clientInterventions) {
         totalMenage += i.prix_client_ttc ?? 0;
-        if (
-          i.blanchisserie_incluse &&
-          i.logement?.type_blanchisserie === "intervention"
-        ) {
+        if (i.blanchisserie_incluse && i.logement?.type_blanchisserie === "intervention") {
           totalBlanchisserie += i.prix_blanchisserie ?? 0;
         }
       }
@@ -244,12 +259,12 @@ export async function POST(request: NextRequest) {
 
       const totalTtc = totalMenage + totalBlanchisserie;
 
-      // Échéance : 30 jours après la fin de la période
-      const dueDate = new Date(period_end);
-      dueDate.setDate(dueDate.getDate() + 30);
-      const dueDateStr = dueDate.toISOString().slice(0, 10);
+      // Due date provisoire (sera écrasée par period_end + 5j lors de l'envoi)
+      const draftDueDate = new Date(period_end);
+      draftDueDate.setDate(draftDueDate.getDate() + 30);
+      const draftDueDateStr = draftDueDate.toISOString().slice(0, 10);
 
-      // Créer la facture
+      // ── PHASE 1 : Créer la facture en draft ───────────────────────────────
       const invoiceNumber = `FAC-${year}-${String(nextSeq).padStart(3, "0")}`;
 
       const { data: invoice, error: invoiceErr } = await supabase
@@ -263,7 +278,7 @@ export async function POST(request: NextRequest) {
           total_menage:        totalMenage,
           total_blanchisserie: totalBlanchisserie,
           total_ttc:           totalTtc,
-          due_date:            dueDateStr,
+          due_date:            draftDueDateStr,
         })
         .select()
         .single();
@@ -277,7 +292,7 @@ export async function POST(request: NextRequest) {
 
       nextSeq++;
 
-      // Créer les lignes de facture
+      // ── PHASE 1 : Créer les lignes de facture ─────────────────────────────
       const lines: Database["public"]["Tables"]["invoice_lines"]["Insert"][] = [];
 
       for (const i of clientInterventions) {
@@ -286,7 +301,6 @@ export async function POST(request: NextRequest) {
           day: "2-digit", month: "2-digit", year: "numeric",
         }).format(new Date(i.date));
 
-        // Ligne ménage
         lines.push({
           invoice_id:      invoice.id,
           intervention_id: i.id,
@@ -298,7 +312,6 @@ export async function POST(request: NextRequest) {
           total:           i.prix_client_ttc ?? 0,
         });
 
-        // Ligne blanchisserie à l'intervention
         if (
           i.blanchisserie_incluse &&
           i.logement?.type_blanchisserie === "intervention" &&
@@ -317,7 +330,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Lignes blanchisserie forfait : uniquement sur la 1re période (day = 1)
       if (isFirstPeriod) {
         for (const l of clientForfaits) {
           if ((l.prix_blanchisserie ?? 0) > 0) {
@@ -344,7 +356,119 @@ export async function POST(request: NextRequest) {
           const msg = `Erreur lignes facture ${invoice.id}: ${linesErr.message}`;
           Sentry.captureException(new Error(msg));
           errors.push(msg);
+          // Facture créée mais lignes en erreur — on abandonne le PDF/email pour ce client
+          continue;
         }
+      }
+
+      // ── PHASE 2 : Générer le PDF ───────────────────────────────────────────
+      // On récupère la facture complète (avec lignes et client) pour buildPdf
+      const { data: rawFull, error: fullErr } = await supabase
+        .from("invoices")
+        .select(`
+          *,
+          client:profiles!invoices_client_id_fkey(id, full_name, email),
+          lines:invoice_lines(*)
+        `)
+        .eq("id", invoice.id)
+        .single();
+
+      if (fullErr || !rawFull) {
+        const msg = `Impossible de récupérer la facture ${invoice.id} pour le PDF : ${fullErr?.message}`;
+        Sentry.captureException(new Error(msg));
+        errors.push(msg);
+        created.push(invoice); // comptée comme créée (draft), mais sans envoi
+        continue;
+      }
+
+      const fullInvoice = rawFull as InvoiceWithDetails;
+
+      let pdfUrl: string | null = null;
+      try {
+        const pdfBytes = await buildPdf(fullInvoice);
+        const fileName = `${invoice.invoice_number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from("factures")
+          .upload(fileName, pdfBytes, { contentType: "application/pdf", upsert: true });
+
+        if (uploadErr) throw new Error(uploadErr.message);
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("factures")
+          .getPublicUrl(fileName);
+
+        pdfUrl = publicUrl;
+
+        await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoice.id);
+      } catch (pdfErr) {
+        const msg = `Erreur PDF facture ${invoice.id}: ${pdfErr instanceof Error ? pdfErr.message : String(pdfErr)}`;
+        Sentry.captureException(new Error(msg));
+        errors.push(msg);
+        created.push(invoice); // comptée comme créée (draft), sans envoi
+        continue;
+      }
+
+      // ── PHASE 3 : Envoyer l'email + passer à "sent" ───────────────────────
+      if (!fullInvoice.client?.email) {
+        errors.push(`Client sans email pour la facture ${invoice.id} — statut reste draft`);
+        created.push(invoice);
+        continue;
+      }
+
+      if (!resendKey) {
+        errors.push(`RESEND_API_KEY manquante — facture ${invoice.id} reste draft`);
+        created.push(invoice);
+        continue;
+      }
+
+      const newDueDate = computeDueDate(period_end);
+
+      try {
+        const resend    = new Resend(resendKey);
+        const emailHtml = buildEmailHtml({
+          clientName:    fullInvoice.client.full_name,
+          invoiceNumber: invoice.invoice_number,
+          periodStart:   period_start,
+          periodEnd:     period_end,
+          totalTtc:      invoice.total_ttc,
+          dueDate:       newDueDate,
+          pdfUrl:        pdfUrl,
+          companyName,
+          companyEmail,
+          companyPhone,
+        });
+
+        const { error: emailErr } = await resend.emails.send({
+          from:    fromEmail,
+          to:      fullInvoice.client.email,
+          subject: `Facture ${invoice.invoice_number} — ${companyName}`,
+          html:    emailHtml,
+        });
+
+        if (emailErr) throw new Error(emailErr.message);
+
+        // Mettre à jour le statut → sent
+        const { error: updateErr } = await supabase
+          .from("invoices")
+          .update({
+            status:   "sent",
+            sent_at:  new Date().toISOString(),
+            due_date: newDueDate,
+          })
+          .eq("id", invoice.id);
+
+        if (updateErr) {
+          // L'email est parti — on logue sans bloquer
+          Sentry.captureException(
+            new Error(`Email envoyé mais erreur statut ${invoice.id}: ${updateErr.message}`)
+          );
+        }
+      } catch (emailErr) {
+        const msg = `Erreur email facture ${invoice.id}: ${emailErr instanceof Error ? emailErr.message : String(emailErr)}`;
+        Sentry.captureException(new Error(msg));
+        errors.push(msg);
+        // La facture est créée avec son PDF — statut reste draft
       }
 
       created.push(invoice);
