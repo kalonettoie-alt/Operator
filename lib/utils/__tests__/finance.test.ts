@@ -5,6 +5,7 @@ import {
   calculateMonthlyProviderCost,
   calculateMonthlyBlanchisserie,
   calculateMonthlyGain,
+  calculateClientMonthlyBilling,
   countWorkingDaysInMonth,
   simulateLogementRevenue,
   simulateCroissance,
@@ -362,6 +363,58 @@ describe("simulateLogementRevenue", () => {
     });
     expect(result.gainMensuel).toBe(-30);           // -10 × 3
     expect(result.margePercent).toBeCloseTo(-25, 1); // -30 / 120
+  });
+});
+
+// ─── calculateClientMonthlyBilling ────────────────────────────────────────────
+
+describe("calculateClientMonthlyBilling", () => {
+  it("somme ménage + blanchisserie pour les interventions terminées", () => {
+    // Intervention 1 : 80 + 0 = 80, Intervention 2 : 100 + 15 = 115 → total 195
+    expect(
+      calculateClientMonthlyBilling([
+        { prix_client_ttc: 80,  prix_prestataire_ht: 50, blanchisserie_incluse: false, prix_blanchisserie: null, status: "terminee" },
+        { prix_client_ttc: 100, prix_prestataire_ht: 60, blanchisserie_incluse: true,  prix_blanchisserie: 15,   status: "terminee" },
+      ])
+    ).toBe(195);
+  });
+
+  it("n'inclut pas la blanchisserie si blanchisserie_incluse = false", () => {
+    expect(
+      calculateClientMonthlyBilling([
+        { prix_client_ttc: 80, prix_prestataire_ht: 50, blanchisserie_incluse: false, prix_blanchisserie: 15, status: "terminee" },
+      ])
+    ).toBe(80); // 15€ non inclus
+  });
+
+  it("exclut les interventions annulées", () => {
+    expect(
+      calculateClientMonthlyBilling([
+        { prix_client_ttc: 80,  prix_prestataire_ht: 50, blanchisserie_incluse: false, prix_blanchisserie: null, status: "terminee" },
+        { prix_client_ttc: 100, prix_prestataire_ht: 60, blanchisserie_incluse: false, prix_blanchisserie: null, status: "annulee"  },
+      ])
+    ).toBe(80);
+  });
+
+  it("exclut les interventions en_cours", () => {
+    expect(
+      calculateClientMonthlyBilling([
+        { prix_client_ttc: 80,  prix_prestataire_ht: 50, blanchisserie_incluse: true, prix_blanchisserie: 10, status: "terminee" },
+        { prix_client_ttc: 100, prix_prestataire_ht: 60, blanchisserie_incluse: true, prix_blanchisserie: 15, status: "en_cours" },
+      ])
+    ).toBe(90); // 80 + 10 = 90
+  });
+
+  it("retourne 0 pour une liste vide", () => {
+    expect(calculateClientMonthlyBilling([])).toBe(0);
+  });
+
+  it("gère les valeurs nulles", () => {
+    expect(
+      calculateClientMonthlyBilling([
+        { prix_client_ttc: null, prix_prestataire_ht: null, blanchisserie_incluse: true, prix_blanchisserie: null, status: "terminee" },
+      ])
+    ).toBe(0);
   });
 });
 
