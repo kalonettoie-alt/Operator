@@ -81,22 +81,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 2. Calculer la période automatiquement selon la date du jour
+    // 2. Lire le body (optionnel) pour détecter le mode force
+    let force = false;
+    try {
+      const body = await request.json() as { force?: boolean };
+      force = body.force === true;
+    } catch {
+      // Body absent ou non-JSON — comportement normal
+    }
+
+    // 3. Calculer la période automatiquement selon la date du jour
     const today = new Date();
     const period = computePeriod(today);
 
-    if (!period) {
+    if (!period && !force) {
       // Ce jour n'est ni le 1er ni le 16 — rien à faire
       return NextResponse.json({
         success: true,
-        message: `Aucune génération prévue le ${today.getUTCDate()} du mois`,
+        message: `Aucune génération prévue le ${today.getUTCDate()} du mois. Utilisez { "force": true } pour forcer.`,
         created: 0,
         skipped: 0,
         invoices: [],
       });
     }
 
-    const { period_start, period_end } = period;
+    // En mode force hors des jours prévus, on simule le comportement du 16
+    // (période 1–15 du mois en cours) — la période la plus logique à tester
+    const { period_start, period_end } = period ?? (() => {
+      const y = today.getUTCFullYear();
+      const m = String(today.getUTCMonth() + 1).padStart(2, "0");
+      return { period_start: `${y}-${m}-01`, period_end: `${y}-${m}-15` };
+    })();
 
     // 3. Client Supabase serveur (service_role)
     const supabase = createServerClient();
