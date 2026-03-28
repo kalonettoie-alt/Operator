@@ -94,6 +94,7 @@ export type ReservationStatus =
 export const RESERVATION_PLATFORMS = {
   AIRBNB: 'airbnb',
   BOOKING: 'booking',
+  HOSPITABLE: 'hospitable',
   DIRECT: 'direct',
   AUTRE: 'autre',
 } as const;

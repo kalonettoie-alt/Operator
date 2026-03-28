@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const PLATFORMS = [
   { value: "airbnb",      label: "Airbnb",       color: "bg-rose-100 text-rose-700"   },
   { value: "booking",     label: "Booking.com",  color: "bg-blue-100 text-blue-700"   },
+  { value: "hospitable",  label: "Hospitable",   color: "bg-purple-100 text-purple-700"},
   { value: "vrbo",        label: "Vrbo",         color: "bg-green-100 text-green-700" },
   { value: "abritel",     label: "Abritel",      color: "bg-orange-100 text-orange-700"},
   { value: "autre",       label: "Autre",        color: "bg-slate-100 text-slate-700" },
