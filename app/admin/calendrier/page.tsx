@@ -445,7 +445,7 @@ export default function AdminCalendrierPage() {
 
         {/* Calendrier */}
         <div className={[
-          "bg-white rounded-xl border shadow-sm overflow-hidden fc-admin min-w-0",
+          "bg-white rounded-xl border shadow-sm overflow-x-auto fc-admin min-w-0",
           selectedDate ? "w-full md:flex-1" : "w-full",
         ].join(" ")}>
           <FullCalendar
@@ -564,6 +564,36 @@ export default function AdminCalendrierPage() {
         .fc-admin .fc-scrollgrid { border-radius: 0; border: none; }
         .fc-admin .fc-daygrid-day { cursor: pointer; transition: background 0.1s; }
         .fc-admin .fc-daygrid-day:hover { background: #f8fafc !important; }
+
+        /* ── Mobile ≤ 767px ───────────────────────────────────────────────── */
+        @media (max-width: 767px) {
+          /* Toolbar : empile les 3 groupes sur 2 lignes */
+          .fc-admin .fc-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.375rem;
+            padding: 0.5rem 0.625rem;
+          }
+          /* Titre centré sur toute la largeur */
+          .fc-admin .fc-toolbar-chunk:nth-child(2) {
+            order: -1;
+            width: 100%;
+            text-align: center;
+          }
+          .fc-admin .fc-toolbar-title { font-size: 0.95rem !important; }
+          /* Boutons plus compacts */
+          .fc-admin .fc-button {
+            font-size: 0.7rem !important;
+            padding: 0.25rem 0.5rem !important;
+          }
+          /* Cache les vues Semaine et Jour (inutilisables sur 375px) */
+          .fc-admin .fc-timeGridWeek-button,
+          .fc-admin .fc-timeGridDay-button { display: none !important; }
+          /* Noms de jours abrégés + taille réduite */
+          .fc-admin .fc-col-header-cell { font-size: 0.7rem; }
+          /* Numéros de jours plus petits */
+          .fc-admin .fc-daygrid-day-number { font-size: 0.7rem; padding: 2px 4px; }
+        }
       `}</style>
     </div>
   );
