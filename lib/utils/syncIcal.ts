@@ -381,6 +381,7 @@ async function syncOneSource(
         })
         .eq("id", existing.id);
 
+      console.log('[ICAL] update result:', uid, updateErr ? 'NULL' : 'OK', 'error:', JSON.stringify(updateErr));
       if (updateErr) {
         stats.errors.push(`Update ${uid} : ${updateErr.message}`);
       } else {
@@ -419,6 +420,7 @@ async function syncOneSource(
         .select("id")
         .single();
 
+      console.log('[ICAL] insert result:', uid, inserted ? 'OK' : 'NULL', 'error:', JSON.stringify(insertErr));
       if (insertErr || !inserted) {
         stats.errors.push(`Insert ${uid} : ${insertErr?.message ?? "pas de données retournées"}`);
         continue;
