@@ -331,13 +331,29 @@ async function syncOneSource(
 
   // 6. Upsert chaque événement actif
   for (const ev of events) {
-    if (ev.status === "CANCELLED") continue;
+    if (ev.status === "CANCELLED") {
+      console.log('[ICAL] SKIPPED:', ev.uid, 'reason: status=CANCELLED');
+      continue;
+    }
 
     const uid = ev.uid;
     const checkIn  = toIsoDate(ev.start);
     const checkOut = toIsoDate(ev.end ?? ev.start);
 
-    if (!checkIn || !checkOut) continue;
+    console.log('[ICAL] processing event:', {
+      uid: ev.uid,
+      summary: ev.summary,
+      dtstart: ev.start,
+      dtend: ev.end,
+      status: ev.status,
+      checkIn,
+      checkOut,
+    });
+
+    if (!checkIn || !checkOut) {
+      console.log('[ICAL] SKIPPED:', uid, 'reason: checkIn ou checkOut vide', { checkIn, checkOut, rawStart: ev.start, rawEnd: ev.end });
+      continue;
+    }
 
     const guestName = paramToString(ev.summary) || null;
     const rawData = {
@@ -348,6 +364,7 @@ async function syncOneSource(
     };
 
     const existing = existingMap.get(uid);
+    console.log('[ICAL]', uid, existing ? 'UPDATE (déjà en DB)' : 'INSERT (nouveau)');
 
     if (existing) {
       // ── Mise à jour ───────────────────────────────────────────────────────
