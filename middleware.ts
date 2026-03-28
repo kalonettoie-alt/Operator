@@ -118,6 +118,6 @@ export async function middleware(request: NextRequest) {
 // - Fichiers publics (images, svg, etc.)
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon\\.ico|api|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|api|monitoring|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };
