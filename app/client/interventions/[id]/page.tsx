@@ -241,11 +241,7 @@ export default function ClientInterventionDetailPage({
                 {etatLieuxPhotos.length} photo{etatLieuxPhotos.length > 1 ? "s" : ""}
               </span>
             </CardTitle>
-            {intervention.etat_lieux_at && (
-              <p className="text-xs text-muted-foreground">
-                Réalisé le {formatDateTime(intervention.etat_lieux_at)}
-              </p>
-            )}
+            {/* Date/heure de réalisation masquée côté client */}
           </CardHeader>
           <CardContent>
             <PhotoGallery photos={etatLieuxPhotos} />
