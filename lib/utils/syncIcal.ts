@@ -139,6 +139,8 @@ async function createInterventionForReservation(
       prix_client_ttc:     logement.prix_client_ttc ?? null,
       prix_prestataire_ht: logement.prix_prestataire_ht ?? null,
       prix_blanchisserie:  logement.prix_blanchisserie ?? null,
+      // blanchisserie_incluse héritée du logement : si un prix est configuré, elle est incluse
+      blanchisserie_incluse: (logement.prix_blanchisserie ?? 0) > 0,
       nb_voyageurs:        nbVoyageurs ?? null,
       has_baby:            hasBaby ?? null,
     })
