@@ -258,11 +258,14 @@ async function syncOneSource(
     });
     clearTimeout(timeout);
 
+    console.log('[ICAL] fetch response status:', resp.status);
     if (!resp.ok) {
       stats.errors.push(`HTTP ${resp.status} sur ${url}`);
       return stats;
     }
     icsText = await resp.text();
+    console.log('[ICAL] raw text length:', icsText.length);
+    console.log('[ICAL] first 500 chars:', icsText.substring(0, 500));
   } catch (err) {
     const msg = err instanceof Error && err.name === "AbortError"
       ? "Timeout — l'URL n'a pas répondu en 15s"
@@ -284,6 +287,9 @@ async function syncOneSource(
   const events = Object.values(components).filter(
     (c): c is VEvent => !!c && c.type === "VEVENT"
   );
+
+  console.log('[ICAL] total events parsed:', events.length);
+  events.forEach(e => console.log('[ICAL] event:', JSON.stringify(e).substring(0, 200)));
 
   // Map uid → event (les CANCELLED seront traités comme absents du flux actif)
   const activeUids = new Set<string>();
