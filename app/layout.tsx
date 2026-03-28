@@ -4,7 +4,6 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
-import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 
 export const metadata: Metadata = {
   title: "Deltom Operator V3",
@@ -37,8 +36,6 @@ export default function RootLayout({
           {/* Toast global — accessible via toast() depuis n'importe quel composant */}
           <Toaster position="bottom-right" richColors />
         </ThemeProvider>
-        {/* Enregistrement Service Worker PWA (composant client) */}
-        <ServiceWorkerRegistration />
       </body>
     </html>
   );
