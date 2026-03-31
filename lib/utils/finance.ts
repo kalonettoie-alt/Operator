@@ -37,19 +37,19 @@ export function calculateInterventionGain(
 // ─── Calcul du chiffre d'affaires client (mois) ───────────────────────────────
 
 /**
- * Somme des prix_client_ttc + blanchisserie (si incluse) sur une liste d'interventions.
+ * Somme des prix_client_ttc (ménage uniquement) sur une liste d'interventions.
+ * La blanchisserie est comptée séparément via calculateMonthlyBlanchisserie.
  * Ne comptabilise QUE les interventions terminées (status = 'terminee').
  * Les interventions en cours, assignées, annulées, etc. sont exclues.
+ *
+ * Relation garantie : calculateMonthlyRevenue + calculateMonthlyBlanchisserie - calculateMonthlyProviderCost = calculateMonthlyGain
  */
 export function calculateMonthlyRevenue(
   interventions: InterventionForFinance[]
 ): number {
   return interventions
     .filter((i) => i.status === INTERVENTION_STATUSES.TERMINEE)
-    .reduce((sum, i) => {
-      const blanchisserie = i.blanchisserie_incluse ? (i.prix_blanchisserie ?? 0) : 0;
-      return sum + (i.prix_client_ttc ?? 0) + blanchisserie;
-    }, 0);
+    .reduce((sum, i) => sum + (i.prix_client_ttc ?? 0), 0);
 }
 
 // ─── Calcul du coût prestataires (mois) ──────────────────────────────────────

@@ -135,6 +135,16 @@ describe("calculateMonthlyRevenue", () => {
       ])
     ).toBe(0);
   });
+
+  it("n'inclut PAS la blanchisserie dans le CA (comptée séparément)", () => {
+    // CA = seulement prix_client_ttc ; blanchisserie comptée via calculateMonthlyBlanchisserie
+    expect(
+      calculateMonthlyRevenue([
+        { prix_client_ttc: 80, prix_prestataire_ht: 50, blanchisserie_incluse: true, prix_blanchisserie: 15, status: "terminee" },
+        { prix_client_ttc: 100, prix_prestataire_ht: 60, blanchisserie_incluse: true, prix_blanchisserie: 20, status: "terminee" },
+      ])
+    ).toBe(180); // 80 + 100, sans les 15 + 20 de blanchisserie
+  });
 });
 
 // ─── calculateMonthlyProviderCost ─────────────────────────────────────────────

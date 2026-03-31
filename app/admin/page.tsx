@@ -159,7 +159,7 @@ export default function AdminDashboardPage() {
           <KpiCard
             label="CA clients"
             value={formatPrix(kpis.revenue)}
-            sublabel="prix client TTC"
+            sublabel="ménage HT (hors linge)"
           />
           <KpiCard
             label="Coût prestataires"
@@ -169,7 +169,7 @@ export default function AdminDashboardPage() {
           <KpiCard
             label="Blanchisserie"
             value={formatPrix(kpis.blanchisserie)}
-            sublabel="revenus linge"
+            sublabel="incluse dans le gain"
           />
         </div>
       </section>
