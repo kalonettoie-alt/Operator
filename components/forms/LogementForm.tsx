@@ -88,7 +88,12 @@ export function LogementForm({ logement, onSuccess }: Props) {
   const prixClient = watch("prix_client_ttc") ?? 0;
   const prixPrestataire = watch("prix_prestataire_ht") ?? 0;
   const typeBlanchisserie = watch("type_blanchisserie");
-  const marge = (prixClient as number) - (prixPrestataire as number);
+  const prixBlanchisserie = watch("prix_blanchisserie") ?? 0;
+  // Marge = ménage + blanchisserie (si configurée) - prestataire
+  const blancInclus = typeBlanchisserie && typeBlanchisserie !== BLANCHISSERIE_TYPES.AUCUNE
+    ? (prixBlanchisserie as number)
+    : 0;
+  const marge = (prixClient as number) + blancInclus - (prixPrestataire as number);
 
   const onSubmit = async (data: FormData) => {
     try {
