@@ -1,0 +1,22 @@
+node_modules
+.turbo
+dist
+.next
+.expo
+*.tsbuildinfo
+
+# Supabase
+supabase/.branches
+supabase/.temp
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# MCP (contient des tokens sensibles)
+.mcp.json
+
+# OS
+.DS_Store
+*.log
